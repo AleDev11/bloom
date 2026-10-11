@@ -40,7 +40,7 @@ img {
 	justify-content: flex-start;
 	position: relative;
 	--notch-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
-	/* Painted by the .edge-surface child (see edge-surface.css). */
+	/* Painted by the .edge-surface child (see components/EdgeSurface.css). */
 	--surface-bg: var(--notch-bg);
 	isolation: isolate;
 	border-radius: 0 0 18px 18px;
