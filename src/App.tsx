@@ -6,6 +6,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getVersion } from "@tauri-apps/api/app";
 import type { UpdateCheckResult } from "./updater";
 import "./App.css";
+import "./edge-surface.css";
 import { initTheme } from "./theme";
 import {
 	PlayIcon,
@@ -2527,6 +2528,7 @@ function App() {
 						default: { type: "spring", stiffness: 500, damping: 30, mass: 1 }
 					}}
 				>
+					<div className={`edge-surface edge-surface--top ${isImpacted ? "show-flares" : ""}`} />
 					<AnimatePresence>
 						{isMusicMode && settingsAmbienceEnabled && albumArtUrl && isOpen && !isCalendarMode && (
 							<motion.div

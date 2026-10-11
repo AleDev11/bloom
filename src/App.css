@@ -26,13 +26,23 @@ img {
 	/* No pointer-events: none here — the pill itself needs to receive mouse */
 }
 
+/* Registered so hover and theme changes fade the notch colour: it drives the
+   edge surface's mask, and a plain custom property would snap. */
+@property --notch-bg {
+	syntax: "<color>";
+	inherits: true;
+	initial-value: rgba(0, 0, 0, 0.8);
+}
+
 .bloom {
 	display: flex;
 	align-items: center;
 	justify-content: flex-start;
 	position: relative;
 	--notch-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
-	background: var(--notch-bg);
+	/* Painted by the .edge-surface child (see edge-surface.css). */
+	--surface-bg: var(--notch-bg);
+	isolation: isolate;
 	border-radius: 0 0 18px 18px;
 	border: none;
 	color: var(--bloom-text, white);
@@ -53,7 +63,7 @@ img {
 		"Segoe UI",
 		sans-serif;
 
-	transition: background 0.3s ease;
+	transition: --notch-bg 0.3s ease;
 }
 
 .bloom.expanded {
@@ -162,45 +172,6 @@ img {
 
 .marquee-content .artist {
 	opacity: 0.6;
-}
-
-/* Concave top corners ("bridge" to screen edge) */
-.bloom.is-impacted::before,
-.bloom.is-impacted::after {
-	content: "";
-	position: absolute;
-	top: 0;
-	width: 13px;
-	height: 13px;
-	background-color: var(--notch-bg);
-	pointer-events: none;
-	transition: background-color 0.3s ease;
-}
-
-.bloom.is-impacted::before {
-	left: -13px;
-	-webkit-mask-image: radial-gradient(circle at 0% 100%, transparent 12.5px, black 13px);
-	mask-image: radial-gradient(circle at 0% 100%, transparent 12.5px, black 13px);
-	background-image: radial-gradient(
-		circle at 0 13px,
-		transparent 12px,
-		rgba(255, 255, 255, 0.1) 12.7px,
-		rgba(255, 255, 255, 0.1) 13.3px,
-		transparent 14px
-	);
-}
-
-.bloom.is-impacted::after {
-	right: -13px;
-	-webkit-mask-image: radial-gradient(circle at 100% 100%, transparent 12.5px, black 13px);
-	mask-image: radial-gradient(circle at 100% 100%, transparent 12.5px, black 13px);
-	background-image: radial-gradient(
-		circle at 13px 13px,
-		transparent 12px,
-		rgba(255, 255, 255, 0.1) 12.7px,
-		rgba(255, 255, 255, 0.1) 13.3px,
-		transparent 14px
-	);
 }
 
 .time-center {
