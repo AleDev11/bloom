@@ -217,32 +217,35 @@ img {
    music on the right while a timer holds the pill, the shelf on the left. */
 .activity-bubble {
 	position: absolute;
-	top: 0;
-	min-width: 36px;
-	height: 36px;
+	/* Centred on the 36px collapsed pill. */
+	top: 3px;
+	min-width: 30px;
+	height: 30px;
 	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 4px;
 	border: none;
-	border-radius: 18px;
-	background: var(--notch-bg);
+	border-radius: 15px;
+	/* --notch-bg only exists inside the pill (.bloom), so use the theme
+	   colour it is built from to match the collapsed pill in every theme. */
+	background: var(--bloom-bg, rgba(0, 0, 0, 0.8));
 	color: var(--bloom-text, white);
 	cursor: pointer;
 	overflow: hidden;
 }
 
 .activity-bubble img {
-	width: 26px;
-	height: 26px;
+	width: 22px;
+	height: 22px;
 	border-radius: 50%;
 	object-fit: cover;
 }
 
 .activity-bubble.shelf-bubble {
-	padding: 0 11px;
-	font-size: 12px;
+	padding: 0 9px;
+	font-size: 11px;
 	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }

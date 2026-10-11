@@ -49,16 +49,17 @@ import {
 /**
  * The notch has two kinds of content:
  * - Panels are tools the user chooses. A click on the notch opens the one it
- *   was last left on (the shelf first while it holds items), and the wheel or
- *   arrows cycle between them.
+ *   was last left on, and the wheel or arrows cycle between them.
  * - Live activities (music, a set timer, a filled shelf) show a compact form in
- *   the pill or a bubble beside it, and clicking one opens its own view.
+ *   the pill or a bubble beside it, and opening one shows its own view, which
+ *   stands alone (no panel arrows) and is never remembered as the last panel.
+ *   Dragging files onto the notch also opens the shelf, since a drag cannot click.
  *   They are never remembered as the last panel.
  * Hover only peeks: the status strip (reachable by hover alone) when no
  * activity holds the pill.
  */
-type NotchPanel = "calendar" | "command-center" | "shelf";
-const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "shelf"];
+type NotchPanel = "calendar" | "command-center";
+const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center"];
 const asNotchPanel = (value: unknown): NotchPanel | null =>
 	NOTCH_PANELS.includes(value as NotchPanel) ? (value as NotchPanel) : null;
 
@@ -664,6 +665,17 @@ function App() {
 	const bloomRef = useRef<HTMLDivElement>(null);
 	const musicBubbleRef = useRef<HTMLButtonElement>(null);
 	const shelfBubbleRef = useRef<HTMLButtonElement>(null);
+	// Resting the cursor on the shelf bubble opens the shelf; brushing past it
+	// does not. The pill itself stays click-to-open.
+	const shelfBubbleDwell = useRef<number | null>(null);
+	const SHELF_BUBBLE_DWELL_MS = 300;
+	const cancelShelfBubbleDwell = () => {
+		if (shelfBubbleDwell.current !== null) {
+			window.clearTimeout(shelfBubbleDwell.current);
+			shelfBubbleDwell.current = null;
+		}
+	};
+	useEffect(() => cancelShelfBubbleDwell, []);
 	const reportNotchRect = useRef<() => void>(() => {});
 	const dockEnabledInitial = useRef(true);
 	const dockModeInitial = useRef(true);
@@ -1376,7 +1388,7 @@ function App() {
 			// Nothing left to show: an open notch moves to the remembered panel,
 			// a closed one to its resting mode, instead of an empty shelf.
 			clearShelfCollapse();
-			setBloomMode(isOpen ? fallbackPanel() : restingModeRef.current);
+			setBloomMode(isOpen ? openingPanel() : restingModeRef.current);
 		}
 	};
 
@@ -1601,7 +1613,6 @@ function App() {
 
 	function panelAvailable(panel: NotchPanel) {
 		if (panel === "calendar") return settingsCalendarEnabled;
-		if (panel === "shelf") return shelfItems.length > 0 || isDragHovering;
 		return true;
 	}
 
@@ -1611,7 +1622,7 @@ function App() {
 	const getCyclableModes = (): (NotchPanel | "music")[] => {
 		const musicInCycle =
 			!settingsMusicCompactNotch && settingsMusicModeEnabled && mediaInfo.has_media;
-		const order: (NotchPanel | "music")[] = ["command-center", "music", "shelf", "calendar"];
+		const order: (NotchPanel | "music")[] = ["command-center", "music", "calendar"];
 		return order.filter((m) => (m === "music" ? musicInCycle : panelAvailable(m)));
 	};
 
@@ -1806,20 +1817,17 @@ function App() {
 	restingModeRef.current = collapsedMode;
 	bloomModeRef.current = bloomMode;
 
-	// The remembered panel if it is still available, else the calendar.
-	const fallbackPanel = (): NotchPanel =>
-		lastPanel && lastPanel !== "shelf" && panelAvailable(lastPanel)
+	// A click opens the panel the notch was last left on, if it is still
+	// available, else the calendar.
+	const openingPanel = (): NotchPanel =>
+		lastPanel && panelAvailable(lastPanel)
 			? lastPanel
 			: settingsCalendarEnabled
 				? "calendar"
 				: "command-center";
 
-	// A click opens the shelf while it holds items, otherwise the panel the
-	// notch was last left on.
-	const openingPanel = (): NotchPanel => (shelfItems.length > 0 ? "shelf" : fallbackPanel());
-
-	// Expands the notch into a panel, or into the music view from its activity.
-	const openNotch = (view: NotchPanel | "music") => {
+	// Expands the notch into a panel, or into an activity's own view.
+	const openNotch = (view: NotchPanel | "music" | "shelf") => {
 		if (bloomMode === "announcement") return;
 		setIsOpen(true);
 		setBloomMode(view);
@@ -2497,8 +2505,7 @@ function App() {
 					}}
 					onClick={(e) => {
 						e.stopPropagation();
-						// Clicking the notch is how it expands: into the shelf while it holds
-						// items, otherwise into the panel it was last left on.
+						// Clicking the notch is how it expands, into the panel it was last left on.
 						if (!isOpen) openNotch(openingPanel());
 					}}
 					onHoverStart={() => {
@@ -3587,13 +3594,23 @@ function App() {
 								opacity: { duration: 0.15 }
 							}}
 							onAnimationComplete={() => reportNotchRect.current()}
+							onHoverStart={() => {
+								cancelShelfBubbleDwell();
+								shelfBubbleDwell.current = window.setTimeout(() => {
+									shelfBubbleDwell.current = null;
+									setIsHovered(true);
+									openNotch("shelf");
+								}, SHELF_BUBBLE_DWELL_MS);
+							}}
+							onHoverEnd={cancelShelfBubbleDwell}
 							onClick={(e) => {
 								e.stopPropagation();
+								cancelShelfBubbleDwell();
 								setIsHovered(true);
 								openNotch("shelf");
 							}}
 						>
-							<Inbox size={14} strokeWidth={2.4} />
+							<Inbox size={12} strokeWidth={2.4} />
 							<span>{shelfItems.length}</span>
 						</motion.button>
 					)}
@@ -3628,7 +3645,7 @@ function App() {
 							{settingsAlbumArtEnabled && albumArtUrl ? (
 								<img src={albumArtUrl} alt="" draggable={false} />
 							) : (
-								<Music size={16} strokeWidth={2.2} />
+								<Music size={14} strokeWidth={2.2} />
 							)}
 						</motion.button>
 					)}
