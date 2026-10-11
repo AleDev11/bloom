@@ -3582,7 +3582,7 @@ function App() {
 							key="shelf-bubble"
 							ref={shelfBubbleRef}
 							type="button"
-							className="activity-bubble shelf-bubble"
+							className={`activity-bubble shelf-bubble ${isHovered ? "expanded" : ""}`}
 							aria-label={`Open shelf: ${shelfItems.length} item${shelfItems.length === 1 ? "" : "s"}`}
 							// Anchored at the pill's centre, offset past its left edge.
 							style={{ right: "50%" }}
@@ -3624,7 +3624,7 @@ function App() {
 							key="music-bubble"
 							ref={musicBubbleRef}
 							type="button"
-							className="activity-bubble"
+							className={`activity-bubble ${isHovered ? "expanded" : ""}`}
 							aria-label={mediaInfo.title ? `Open music: ${mediaInfo.title}` : "Open music"}
 							// Anchored at the pill's centre, offset past its right edge.
 							style={{ left: "50%" }}

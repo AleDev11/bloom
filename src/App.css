@@ -200,11 +200,17 @@ img {
 	border: none;
 	border-radius: 15px;
 	/* --notch-bg only exists inside the pill (.bloom), so use the theme
-	   colour it is built from to match the collapsed pill in every theme. */
+	   colours it is built from, matching the pill in every theme and fading
+	   with it while it's hovered. */
 	background: var(--bloom-bg, rgba(0, 0, 0, 0.8));
 	color: var(--bloom-text, white);
 	cursor: pointer;
 	overflow: hidden;
+	transition: background-color 0.3s ease;
+}
+
+.activity-bubble.expanded {
+	background: var(--bloom-bg-expanded, rgba(0, 0, 0, 0.92));
 }
 
 .activity-bubble img {
