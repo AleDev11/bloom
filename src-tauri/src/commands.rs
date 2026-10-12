@@ -3101,78 +3101,23 @@ pub fn get_brightness() -> u32 {
     crate::state::CURRENT_BRIGHTNESS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-// ── Wi-Fi status — WLAN API for association state ────────────────────────────
-// The radio state only says Wi-Fi is on, not whether it is connected, so the
-// notch quick settings needs a second bit to distinguish "on" from "connected".
-
-fn is_wlan_connected_sync() -> bool {
-    use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::NetworkManagement::WiFi::{
-        wlan_intf_opcode_current_connection, WlanCloseHandle, WlanEnumInterfaces, WlanFreeMemory,
-        WlanOpenHandle, WlanQueryInterface, WLAN_INTERFACE_INFO_LIST,
-    };
-
-    unsafe {
-        let mut negotiated_version = 0u32;
-        let mut client_handle = HANDLE::default();
-        if WlanOpenHandle(2, None, &mut negotiated_version, &mut client_handle) != 0 {
-            return false;
-        }
-
-        let mut interface_list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
-        let mut connected = false;
-        if WlanEnumInterfaces(client_handle, None, &mut interface_list) != 0 {
-            WlanCloseHandle(client_handle, None);
-            return false;
-        }
-        // A success code guarantees an allocated list; as_ref() turns the
-        // pointer into a checked reference. WLAN_INTERFACE_INFO_LIST ends in a
-        // C flexible array (InterfaceInfo[1] with dwNumberOfItems entries), so
-        // the count is sanity-bounded before building the slice.
-        if let Some(list) = interface_list.as_ref() {
-            let count = list.dwNumberOfItems as usize;
-            if count > 0 && count <= 64 {
-                let interfaces = std::slice::from_raw_parts(list.InterfaceInfo.as_ptr(), count);
-                for interface in interfaces {
-                    let mut data_size = 0u32;
-                    let mut data: *mut std::ffi::c_void = std::ptr::null_mut();
-                    // Returns ERROR_INVALID_STATE when the interface is not
-                    // associated, so a successful query means an active connection.
-                    let result = WlanQueryInterface(
-                        client_handle,
-                        &interface.InterfaceGuid,
-                        wlan_intf_opcode_current_connection,
-                        None,
-                        &mut data_size,
-                        &mut data,
-                        None,
-                    );
-                    if !data.is_null() {
-                        WlanFreeMemory(data);
-                    }
-                    if result == 0 {
-                        connected = true;
-                        break;
-                    }
-                }
-            }
-            WlanFreeMemory(interface_list as *const _);
-        }
-
-        WlanCloseHandle(client_handle, None);
-        connected
-    }
-}
-
 /// Wi-Fi radio and association state, so the notch quick settings tile can show
-/// Off / On / Connected. `connected` is false while the radio is on but no
-/// network is associated.
+/// Off / On / the connected network. The radio state alone only says Wi-Fi is
+/// on, so the WLAN API supplies the association.
 #[tauri::command]
 pub async fn get_wifi_status() -> Result<WifiStatus, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<WifiStatus, String> {
         let enabled = get_radio_state_sync(windows::Devices::Radios::RadioKind::WiFi)?;
-        let connected = enabled && is_wlan_connected_sync();
-        Ok(WifiStatus { enabled, connected })
+        let ssid = if enabled {
+            crate::wifi::connected_ssid()
+        } else {
+            None
+        };
+        Ok(WifiStatus {
+            enabled,
+            connected: ssid.is_some(),
+            ssid,
+        })
     })
     .await
     .map_err(|e| e.to_string())?
