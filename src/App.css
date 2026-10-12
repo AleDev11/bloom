@@ -1453,10 +1453,36 @@ img {
 	overflow-x: auto;
 	overflow-y: hidden;
 	min-height: 0;
-	scrollbar-width: none;
+}
+
+/* A thin themed scrollbar once the row overflows, so items past the first
+   three can be reached without a wheel (and it shows that there are more).
+   Setting the standard scrollbar-width would make Chromium ignore these. */
+/* Room between the tiles and the scrollbar when the row overflows. */
+.shelf-items-grid.overflowing {
+	padding-bottom: 10px;
 }
 
 .shelf-items-grid::-webkit-scrollbar {
+	height: 5px;
+}
+
+/* Drawn from the theme's text colour so it reads in light and dark themes. */
+.shelf-items-grid::-webkit-scrollbar-track {
+	background: color-mix(in srgb, var(--bloom-text, white) 8%, transparent);
+	border-radius: 3px;
+}
+
+.shelf-items-grid::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--bloom-text, white) 35%, transparent);
+	border-radius: 3px;
+}
+
+.shelf-items-grid::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--bloom-text, white) 55%, transparent);
+}
+
+.shelf-items-grid::-webkit-scrollbar-button {
 	display: none;
 }
 

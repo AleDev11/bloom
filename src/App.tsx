@@ -1,5 +1,5 @@
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { useEffect, useState, useCallback, useRef, memo } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, memo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -1307,12 +1307,29 @@ function App() {
 	// Wheel scrolling for the shelf strip: ease towards a target instead of
 	// jumping, so wheel and trackpad input both feel fluid.
 	const shelfScrollTargetRef = useRef<number | null>(null);
+	const shelfGridRef = useRef<HTMLDivElement>(null);
+	// Whether the shelf row overflows, so it gets room for its scrollbar.
+	const [shelfOverflowing, setShelfOverflowing] = useState(false);
+	// Measured against the open shelf's width (380px minus its 14px side
+	// padding) rather than the live one, which is still growing while the
+	// notch animates open. A removed tile stays in the row until its exit
+	// animation ends, so the row is measured again then.
+	const measureShelfOverflow = useCallback(() => {
+		const el = shelfGridRef.current;
+		setShelfOverflowing(!!el && el.scrollWidth > 380 - 28 + 1);
+	}, []);
+	useLayoutEffect(measureShelfOverflow, [shelfItems, bloomMode, measureShelfOverflow]);
 	const shelfScrollRafRef = useRef<number | null>(null);
+	// The wheel scrolls the row from anywhere over the shelf view, not just
+	// over the tiles. Mice that report lines instead of pixels are scaled up.
 	const handleShelfWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-		const el = e.currentTarget;
+		const el = shelfGridRef.current;
+		if (!el) return;
 		const max = el.scrollWidth - el.clientWidth;
+		if (max <= 0) return;
+		const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientWidth : 1;
 		const base = shelfScrollTargetRef.current ?? el.scrollLeft;
-		shelfScrollTargetRef.current = Math.max(0, Math.min(max, base + e.deltaY + e.deltaX));
+		shelfScrollTargetRef.current = Math.max(0, Math.min(max, base + (e.deltaY + e.deltaX) * unit));
 		if (shelfScrollRafRef.current !== null) return;
 		const step = () => {
 			const target = shelfScrollTargetRef.current;
@@ -1327,7 +1344,16 @@ function App() {
 				shelfScrollRafRef.current = null;
 				return;
 			}
+			const before = el.scrollLeft;
 			el.scrollLeft += diff * 0.22;
+			// At fractional display scales a small step can round back to the
+			// same position; finish the move instead of stalling short of it.
+			if (el.scrollLeft === before) {
+				el.scrollLeft = target;
+				shelfScrollTargetRef.current = null;
+				shelfScrollRafRef.current = null;
+				return;
+			}
 			shelfScrollRafRef.current = requestAnimationFrame(step);
 		};
 		shelfScrollRafRef.current = requestAnimationFrame(step);
@@ -1595,7 +1621,7 @@ function App() {
 		if (
 			target.closest(".calendar-grid") ||
 			target.closest(".timer-column") ||
-			target.closest(".shelf-items-grid")
+			target.closest(".shelf-content")
 		) {
 			return;
 		}
@@ -2405,8 +2431,12 @@ function App() {
 		// Sized to the calendar's week-row count plus the timer's fixed content.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		// Shelf expands on mode alone (no hover needed: there is no cursor
-		// hover during an OS drag) and is sized to exactly one row of tiles.
-		if (bloomMode === "shelf") return shelfItems.length > 0 ? 176 : 130;
+		// hover during an OS drag) and is sized to exactly one row of tiles,
+		// plus room for the scrollbar once the tiles overflow it.
+		if (bloomMode === "shelf") {
+			if (shelfItems.length === 0) return 130;
+			return shelfOverflowing ? 190 : 176;
+		}
 		if (bloomMode === "command-center") return isOpen ? 230 : 36;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
@@ -3480,6 +3510,7 @@ function App() {
 										<motion.div
 											className="shelf-content"
 											onClick={(e) => e.stopPropagation()}
+											onWheel={handleShelfWheel}
 											initial={{ opacity: 0 }}
 											animate={{ opacity: 1 }}
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
@@ -3491,8 +3522,11 @@ function App() {
 													<span>Drop files or selected text here</span>
 												</div>
 											) : (
-												<div className="shelf-items-grid" onWheel={handleShelfWheel}>
-													<AnimatePresence mode="popLayout">
+												<div
+													className={`shelf-items-grid ${shelfOverflowing ? "overflowing" : ""}`}
+													ref={shelfGridRef}
+												>
+													<AnimatePresence mode="popLayout" onExitComplete={measureShelfOverflow}>
 														{shelfItems.map((item) => {
 															const thumb = item.path ? shelfThumbs[item.path] : undefined;
 															return (
