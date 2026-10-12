@@ -28,6 +28,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import { EdgeSurface } from "./components/EdgeSurface";
+import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import {
 	Cpu,
 	MemoryStick,
@@ -38,7 +39,6 @@ import {
 	Pause,
 	RotateCcw,
 	Megaphone,
-	File,
 	Type,
 	X,
 	ChevronLeft,
@@ -401,6 +401,15 @@ interface MediaInfo {
 interface WifiStatus {
 	enabled: boolean;
 	connected: boolean;
+}
+
+// A shelf file's preview from the backend: a picture when one can be made,
+// else the opening text of a document or text file, and whether it's a folder
+// (for the placeholder icon).
+interface ShelfPreview {
+	thumb: string | null;
+	text: string | null;
+	folder: boolean;
 }
 
 interface ShelfItem {
@@ -1191,10 +1200,12 @@ function App() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Thumbnails are generated lazily per path and cached; null means "no
-	// preview" (non-image or unreadable) and falls back to a file icon. Text
-	// items render their content instead.
-	const [shelfThumbs, setShelfThumbs] = useState<Record<string, string | null>>({});
+	// Previews are generated lazily per path and cached. Images, PDFs, Office
+	// files with a saved thumbnail, and anything Windows can thumbnail (videos,
+	// folders...) show a picture; documents and text files show their opening
+	// text; the rest fall back to an icon for their type. Text items render
+	// their content.
+	const [shelfThumbs, setShelfThumbs] = useState<Record<string, ShelfPreview>>({});
 	const shelfThumbPending = useRef<Set<string>>(new Set());
 	useEffect(() => {
 		for (const item of shelfItems) {
@@ -1204,14 +1215,14 @@ function App() {
 			shelfThumbPending.current.add(path);
 			// The item may be removed while this is in flight; don't resurrect
 			// a stale cache entry.
-			const storeThumb = (thumb: string | null) =>
+			const storeThumb = (preview: ShelfPreview) =>
 				setShelfThumbs((prev) => {
 					if (!shelfItemsRef.current.some((i) => i.path === path)) return prev;
-					return { ...prev, [path]: thumb };
+					return { ...prev, [path]: preview };
 				});
-			invoke<string | null>("shelf_thumbnail", { path })
+			invoke<ShelfPreview>("shelf_thumbnail", { path })
 				.then(storeThumb)
-				.catch(() => storeThumb(null))
+				.catch(() => storeThumb({ thumb: null, text: null, folder: false }))
 				.finally(() => shelfThumbPending.current.delete(path));
 		}
 	}, [shelfItems, shelfThumbs]);
@@ -1223,7 +1234,7 @@ function App() {
 		setShelfThumbs((prev) => {
 			const keys = Object.keys(prev);
 			if (keys.every((k) => current.has(k))) return prev;
-			const next: Record<string, string | null> = {};
+			const next: Record<string, ShelfPreview> = {};
 			for (const k of keys) {
 				if (current.has(k)) next[k] = prev[k];
 			}
@@ -1269,7 +1280,7 @@ function App() {
 		if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 6) return;
 		if (!item.path) return;
 		const path = item.path;
-		const icon = shelfThumbs[path] ?? shelfDragIcon;
+		const icon = shelfThumbs[path]?.thumb ?? shelfDragIcon;
 		if (!icon) return;
 		st.dragging = true;
 		// Picking an item up is a deliberate act; don't let the post-drop
@@ -3528,7 +3539,8 @@ function App() {
 												>
 													<AnimatePresence mode="popLayout" onExitComplete={measureShelfOverflow}>
 														{shelfItems.map((item) => {
-															const thumb = item.path ? shelfThumbs[item.path] : undefined;
+															const preview = item.path ? shelfThumbs[item.path] : undefined;
+															const thumb = preview?.thumb;
 															return (
 																<motion.div
 																	key={item.id}
@@ -3550,7 +3562,7 @@ function App() {
 																		damping: 38,
 																		mass: 0.7
 																	}}
-																	className={`shelf-tile ${item.type === "text" ? "is-text" : ""}`}
+																	className={`shelf-tile ${item.type === "text" || (!thumb && preview?.text) ? "is-text" : ""}`}
 																	title={
 																		item.type === "text" ? item.text?.slice(0, 1000) : item.path
 																	}
@@ -3568,11 +3580,26 @@ function App() {
 																				/>
 																				<span className="shelf-tile-text-body">{item.text}</span>
 																			</div>
+																		) : !thumb && preview?.text ? (
+																			// A document or text file: its opening text,
+																			// marked with its type's icon.
+																			<div className="shelf-tile-text">
+																				<ShelfTypeIcon
+																					name={item.name}
+																					folder={false}
+																					size={11}
+																					className="shelf-tile-text-icon"
+																				/>
+																				<span className="shelf-tile-text-body">{preview.text}</span>
+																			</div>
 																		) : (
 																			<>
 																				<div className="shelf-tile-placeholder">
-																					{thumb === null ? (
-																						<File size={26} strokeWidth={1.75} />
+																					{preview && !thumb ? (
+																						<ShelfTypeIcon
+																							name={item.name}
+																							folder={preview.folder}
+																						/>
 																					) : null}
 																				</div>
 																				{thumb ? (
