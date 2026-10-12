@@ -1,5 +1,5 @@
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { useEffect, useState, useCallback, useRef, memo } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, memo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -28,6 +28,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import type { WidgetConfig } from "./components/StatusWidgetConfig";
 import { EdgeSurface } from "./components/EdgeSurface";
+import { ShelfTypeIcon } from "./components/ShelfTypeIcon";
 import { WifiPanel } from "./components/WifiPanel";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import {
@@ -40,7 +41,6 @@ import {
 	Pause,
 	RotateCcw,
 	Megaphone,
-	File,
 	Type,
 	X,
 	ChevronLeft,
@@ -404,6 +404,15 @@ interface WifiStatus {
 	enabled: boolean;
 	connected: boolean;
 	ssid: string | null;
+}
+
+// A shelf file's preview from the backend: a picture when one can be made,
+// else the opening text of a document or text file, and whether it's a folder
+// (for the placeholder icon).
+interface ShelfPreview {
+	thumb: string | null;
+	text: string | null;
+	folder: boolean;
 }
 
 interface ShelfItem {
@@ -1204,10 +1213,12 @@ function App() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Thumbnails are generated lazily per path and cached; null means "no
-	// preview" (non-image or unreadable) and falls back to a file icon. Text
-	// items render their content instead.
-	const [shelfThumbs, setShelfThumbs] = useState<Record<string, string | null>>({});
+	// Previews are generated lazily per path and cached. Images, PDFs, Office
+	// files with a saved thumbnail, and anything Windows can thumbnail (videos,
+	// folders...) show a picture; documents and text files show their opening
+	// text; the rest fall back to an icon for their type. Text items render
+	// their content.
+	const [shelfThumbs, setShelfThumbs] = useState<Record<string, ShelfPreview>>({});
 	const shelfThumbPending = useRef<Set<string>>(new Set());
 	useEffect(() => {
 		for (const item of shelfItems) {
@@ -1217,14 +1228,14 @@ function App() {
 			shelfThumbPending.current.add(path);
 			// The item may be removed while this is in flight; don't resurrect
 			// a stale cache entry.
-			const storeThumb = (thumb: string | null) =>
+			const storeThumb = (preview: ShelfPreview) =>
 				setShelfThumbs((prev) => {
 					if (!shelfItemsRef.current.some((i) => i.path === path)) return prev;
-					return { ...prev, [path]: thumb };
+					return { ...prev, [path]: preview };
 				});
-			invoke<string | null>("shelf_thumbnail", { path })
+			invoke<ShelfPreview>("shelf_thumbnail", { path })
 				.then(storeThumb)
-				.catch(() => storeThumb(null))
+				.catch(() => storeThumb({ thumb: null, text: null, folder: false }))
 				.finally(() => shelfThumbPending.current.delete(path));
 		}
 	}, [shelfItems, shelfThumbs]);
@@ -1236,7 +1247,7 @@ function App() {
 		setShelfThumbs((prev) => {
 			const keys = Object.keys(prev);
 			if (keys.every((k) => current.has(k))) return prev;
-			const next: Record<string, string | null> = {};
+			const next: Record<string, ShelfPreview> = {};
 			for (const k of keys) {
 				if (current.has(k)) next[k] = prev[k];
 			}
@@ -1282,7 +1293,7 @@ function App() {
 		if (Math.hypot(e.clientX - st.x, e.clientY - st.y) < 6) return;
 		if (!item.path) return;
 		const path = item.path;
-		const icon = shelfThumbs[path] ?? shelfDragIcon;
+		const icon = shelfThumbs[path]?.thumb ?? shelfDragIcon;
 		if (!icon) return;
 		st.dragging = true;
 		// Picking an item up is a deliberate act; don't let the post-drop
@@ -1320,12 +1331,29 @@ function App() {
 	// Wheel scrolling for the shelf strip: ease towards a target instead of
 	// jumping, so wheel and trackpad input both feel fluid.
 	const shelfScrollTargetRef = useRef<number | null>(null);
+	const shelfGridRef = useRef<HTMLDivElement>(null);
+	// Whether the shelf row overflows, so it gets room for its scrollbar.
+	const [shelfOverflowing, setShelfOverflowing] = useState(false);
+	// Measured against the open shelf's width (380px minus its 14px side
+	// padding) rather than the live one, which is still growing while the
+	// notch animates open. A removed tile stays in the row until its exit
+	// animation ends, so the row is measured again then.
+	const measureShelfOverflow = useCallback(() => {
+		const el = shelfGridRef.current;
+		setShelfOverflowing(!!el && el.scrollWidth > 380 - 28 + 1);
+	}, []);
+	useLayoutEffect(measureShelfOverflow, [shelfItems, bloomMode, measureShelfOverflow]);
 	const shelfScrollRafRef = useRef<number | null>(null);
+	// The wheel scrolls the row from anywhere over the shelf view, not just
+	// over the tiles. Mice that report lines instead of pixels are scaled up.
 	const handleShelfWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-		const el = e.currentTarget;
+		const el = shelfGridRef.current;
+		if (!el) return;
 		const max = el.scrollWidth - el.clientWidth;
+		if (max <= 0) return;
+		const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientWidth : 1;
 		const base = shelfScrollTargetRef.current ?? el.scrollLeft;
-		shelfScrollTargetRef.current = Math.max(0, Math.min(max, base + e.deltaY + e.deltaX));
+		shelfScrollTargetRef.current = Math.max(0, Math.min(max, base + (e.deltaY + e.deltaX) * unit));
 		if (shelfScrollRafRef.current !== null) return;
 		const step = () => {
 			const target = shelfScrollTargetRef.current;
@@ -1340,7 +1368,16 @@ function App() {
 				shelfScrollRafRef.current = null;
 				return;
 			}
+			const before = el.scrollLeft;
 			el.scrollLeft += diff * 0.22;
+			// At fractional display scales a small step can round back to the
+			// same position; finish the move instead of stalling short of it.
+			if (el.scrollLeft === before) {
+				el.scrollLeft = target;
+				shelfScrollTargetRef.current = null;
+				shelfScrollRafRef.current = null;
+				return;
+			}
 			shelfScrollRafRef.current = requestAnimationFrame(step);
 		};
 		shelfScrollRafRef.current = requestAnimationFrame(step);
@@ -1618,7 +1655,7 @@ function App() {
 		if (
 			target.closest(".calendar-grid") ||
 			target.closest(".timer-column") ||
-			target.closest(".shelf-items-grid") ||
+			target.closest(".shelf-content") ||
 			target.closest(".qp-list")
 		) {
 			return;
@@ -2470,8 +2507,12 @@ function App() {
 		// Sized to the calendar's week-row count plus the timer's fixed content.
 		if (bloomMode === "calendar") return calendarMonthRows >= 6 ? 305 : 273;
 		// Shelf expands on mode alone (no hover needed: there is no cursor
-		// hover during an OS drag) and is sized to exactly one row of tiles.
-		if (bloomMode === "shelf") return shelfItems.length > 0 ? 176 : 130;
+		// hover during an OS drag) and is sized to exactly one row of tiles,
+		// plus room for the scrollbar once the tiles overflow it.
+		if (bloomMode === "shelf") {
+			if (shelfItems.length === 0) return 130;
+			return shelfOverflowing ? 190 : 176;
+		}
 		if (bloomMode === "command-center") return isOpen ? 230 : 36;
 		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 300;
 		if (bloomMode === "status") return 36;
@@ -3615,6 +3656,7 @@ function App() {
 										<motion.div
 											className="shelf-content"
 											onClick={(e) => e.stopPropagation()}
+											onWheel={handleShelfWheel}
 											initial={{ opacity: 0 }}
 											animate={{ opacity: 1 }}
 											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
@@ -3626,10 +3668,14 @@ function App() {
 													<span>Drop files or selected text here</span>
 												</div>
 											) : (
-												<div className="shelf-items-grid" onWheel={handleShelfWheel}>
-													<AnimatePresence mode="popLayout">
+												<div
+													className={`shelf-items-grid ${shelfOverflowing ? "overflowing" : ""}`}
+													ref={shelfGridRef}
+												>
+													<AnimatePresence mode="popLayout" onExitComplete={measureShelfOverflow}>
 														{shelfItems.map((item) => {
-															const thumb = item.path ? shelfThumbs[item.path] : undefined;
+															const preview = item.path ? shelfThumbs[item.path] : undefined;
+															const thumb = preview?.thumb;
 															return (
 																<motion.div
 																	key={item.id}
@@ -3651,7 +3697,7 @@ function App() {
 																		damping: 38,
 																		mass: 0.7
 																	}}
-																	className={`shelf-tile ${item.type === "text" ? "is-text" : ""}`}
+																	className={`shelf-tile ${item.type === "text" || (!thumb && preview?.text) ? "is-text" : ""}`}
 																	title={
 																		item.type === "text" ? item.text?.slice(0, 1000) : item.path
 																	}
@@ -3669,11 +3715,26 @@ function App() {
 																				/>
 																				<span className="shelf-tile-text-body">{item.text}</span>
 																			</div>
+																		) : !thumb && preview?.text ? (
+																			// A document or text file: its opening text,
+																			// marked with its type's icon.
+																			<div className="shelf-tile-text">
+																				<ShelfTypeIcon
+																					name={item.name}
+																					folder={false}
+																					size={11}
+																					className="shelf-tile-text-icon"
+																				/>
+																				<span className="shelf-tile-text-body">{preview.text}</span>
+																			</div>
 																		) : (
 																			<>
 																				<div className="shelf-tile-placeholder">
-																					{thumb === null ? (
-																						<File size={26} strokeWidth={1.75} />
+																					{preview && !thumb ? (
+																						<ShelfTypeIcon
+																							name={item.name}
+																							folder={preview.folder}
+																						/>
 																					) : null}
 																				</div>
 																				{thumb ? (

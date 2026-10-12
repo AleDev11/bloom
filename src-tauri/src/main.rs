@@ -5,6 +5,7 @@ mod commands;
 mod dock_extras;
 mod services;
 mod shelf;
+mod shelf_preview;
 mod state;
 mod tray;
 mod types;

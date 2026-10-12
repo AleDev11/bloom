@@ -45,6 +45,8 @@ windows = { version = "0.61", features = [
 	"Win32_System_Wmi",
 	"Win32_Storage_FileSystem",
 	"Win32_System_Ole",
+	"Data_Pdf",
+	"Storage",
 	"Storage_Streams",
 	"Win32_System_Console",
 	"Graphics_Imaging",
@@ -76,6 +78,8 @@ wmi = "0.14"
 tokio = { version = "1", features = ["time", "sync"] }
 webview2-com = "0.38"
 image = "0.25"
+# Reads the thumbnail or text inside Office files for shelf previews.
+zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
 tauri-plugin-drag = "2.1.1"
 tauri-plugin-dialog = "2"
 rustfft = "6"
