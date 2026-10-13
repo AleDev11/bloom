@@ -51,15 +51,13 @@ import {
 
 /**
  * The notch has two kinds of content:
- * - Panels are tools the user chooses. A click on the notch opens the one it
- *   was last left on, and the wheel or arrows cycle between them.
+ * - Panels are tools the user chooses. By default, a click opens the one it
+ *   was last left on; the legacy setting opens on hover instead.
  * - Live activities (music, a set timer, a filled shelf) show a compact form in
  *   the pill or a bubble beside it, and opening one shows its own view, which
  *   stands alone (no panel arrows) and is never remembered as the last panel.
- *   Dragging files onto the notch also opens the shelf, since a drag cannot click.
- *   They are never remembered as the last panel.
- * Hover only peeks: the status strip (reachable by hover alone) when no
- * activity holds the pill.
+ *   Dragging files onto the notch also opens the shelf. Wheel/swipe switches
+ *   between tool panels, including when a live activity occupies the pill.
  */
 type NotchPanel = "calendar" | "command-center";
 const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center"];
@@ -688,17 +686,6 @@ function App() {
 	const bloomRef = useRef<HTMLDivElement>(null);
 	const musicBubbleRef = useRef<HTMLButtonElement>(null);
 	const shelfBubbleRef = useRef<HTMLButtonElement>(null);
-	// Resting the cursor on the shelf bubble opens the shelf; brushing past it
-	// does not. The pill itself stays click-to-open.
-	const shelfBubbleDwell = useRef<number | null>(null);
-	const SHELF_BUBBLE_DWELL_MS = 300;
-	const cancelShelfBubbleDwell = () => {
-		if (shelfBubbleDwell.current !== null) {
-			window.clearTimeout(shelfBubbleDwell.current);
-			shelfBubbleDwell.current = null;
-		}
-	};
-	useEffect(() => cancelShelfBubbleDwell, []);
 	const reportNotchRect = useRef<() => void>(() => {});
 	const dockEnabledInitial = useRef(true);
 	const dockModeInitial = useRef(true);
@@ -879,6 +866,11 @@ function App() {
 	const [settingsMusicModeEnabled, setSettingsMusicModeEnabled] = useState(
 		() => localStorage.getItem("bloom-music-mode-enabled") !== "false"
 	);
+	const [clickToOpen, setClickToOpen] = useState(
+		() => localStorage.getItem("bloom-notch-click-to-open") !== "false"
+	);
+	const clickToOpenRef = useRef(clickToOpen);
+	clickToOpenRef.current = clickToOpen;
 	// The panel the open notch was last left on. Opening the notch returns to it,
 	// across restarts too (bloom-notch-last-panel).
 	const [lastPanel, setLastPanel] = useState<NotchPanel | null>(() =>
@@ -937,6 +929,7 @@ function App() {
 				setSettingsCalendarEnabled(getVal("bloom-calendar-enabled", "true") !== "false");
 				setSettingsTimerSoundEnabled(getVal("bloom-timer-sound-enabled", "true") !== "false");
 				setSettingsMusicModeEnabled(getVal("bloom-music-mode-enabled", "true") !== "false");
+				setClickToOpen(getVal("bloom-notch-click-to-open", "true") !== "false");
 				setShelfPersist(getVal("bloom-shelf-persist", "false") === "true");
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
 				setLastPanel(asNotchPanel(getVal("bloom-notch-last-panel")));
@@ -1087,6 +1080,7 @@ function App() {
 			"bloom-calendar-enabled": setSettingsCalendarEnabled,
 			"bloom-timer-sound-enabled": setSettingsTimerSoundEnabled,
 			"bloom-music-mode-enabled": setSettingsMusicModeEnabled,
+			"bloom-notch-click-to-open": setClickToOpen,
 			"bloom-shelf-persist": setShelfPersist,
 			"bloom-music-compact-notch": setSettingsMusicCompactNotch,
 			"bloom-notch-last-panel": (v: unknown) => setLastPanel(asNotchPanel(v)),
@@ -1409,7 +1403,7 @@ function App() {
 		setIsNotchHovered(false);
 		if (isOpenRef.current) {
 			const panel = asNotchPanel(bloomModeRef.current);
-			if (panel) rememberPanelRef.current(panel);
+			if (panel && clickToOpenRef.current) rememberPanelRef.current(panel);
 			setIsOpen(false);
 		}
 		setBloomMode((prev) =>
@@ -1661,8 +1655,6 @@ function App() {
 			return;
 		}
 
-		if (!isOpen) return;
-
 		const now = Date.now();
 		if (now - lastScrollTime.current < 250) return;
 
@@ -1678,28 +1670,26 @@ function App() {
 		return true;
 	}
 
-	// Views the open notch cycles through with the wheel or the arrows. Music is
-	// a live activity opened from its compact form; only when compact music is
-	// turned off does it join the cycle, so the player stays reachable.
-	const getCyclableModes = (): (NotchPanel | "music")[] => {
-		const musicInCycle =
-			!settingsMusicCompactNotch && settingsMusicModeEnabled && mediaInfo.has_media;
-		const order: (NotchPanel | "music")[] = ["command-center", "music", "calendar"];
-		return order.filter((m) => (m === "music" ? musicInCycle : panelAvailable(m)));
-	};
-
-	// Moves to the next (1) or previous (-1) notch panel. Shared by the scroll
-	// wheel and the panel arrows; returns whether the panel changed.
+	// Wheel and swipe navigate panels, even from a collapsed live activity.
+	// Music and shelf remain entry points through their activity affordances.
 	const cycleBloomMode = (direction: 1 | -1) => {
-		// Only cyclable views move: the announcement card is closed explicitly,
-		// the status strip is a hover peek, and the music view stands alone.
-		const availableModes = getCyclableModes();
-		const currentIndex = availableModes.indexOf(bloomMode as (typeof availableModes)[number]);
-		if (currentIndex === -1) return false;
-		const nextMode =
-			availableModes[(currentIndex + direction + availableModes.length) % availableModes.length];
+		if (bloomMode === "announcement") return false;
+		const panels = NOTCH_PANELS.filter(panelAvailable);
+		const currentIndex = panels.indexOf(bloomMode as NotchPanel);
+		const nextMode = currentIndex === -1
+			? openingPanel()
+			: panels[(currentIndex + direction + panels.length) % panels.length];
+		setIsOpen(true);
 		setBloomMode(nextMode);
 		return true;
+	};
+
+	// Arrows and wheel both stay within panels once one is open.
+	const cyclePanel = (direction: 1 | -1) => {
+		const panels = NOTCH_PANELS.filter(panelAvailable);
+		const index = panels.indexOf(bloomMode as NotchPanel);
+		if (index === -1 || panels.length < 2) return;
+		setBloomMode(panels[(index + direction + panels.length) % panels.length]);
 	};
 
 	// Timer state
@@ -1863,15 +1853,28 @@ function App() {
 
 	const lastTrackRef = useRef<string | null>(null);
 	const lastPlayingRef = useRef<boolean>(false);
+	const [musicActivityVisible, setMusicActivityVisible] = useState(false);
+
+	// Keep a paused media session visible briefly so it can be resumed, then
+	// clear its compact activity even if Windows retains the media session.
+	useEffect(() => {
+		if (!settingsMusicModeEnabled || !mediaInfo.has_media) {
+			setMusicActivityVisible(false);
+			return;
+		}
+		setMusicActivityVisible(true);
+		if (isPlaying) return;
+		const timeout = window.setTimeout(() => setMusicActivityVisible(false), 5000);
+		return () => window.clearTimeout(timeout);
+	}, [settingsMusicModeEnabled, mediaInfo.has_media, isPlaying]);
 
 	// Like the Dynamic Island, the collapsed notch shows one live activity at a
-	// time. Music is an activity for as long as a media session exists, playing
-	// or paused, so the player can always be reopened to resume. A set timer
+	// time. Music fades a few seconds after playback stops. A set timer
 	// (running, paused or just finished) takes the pill, and music then moves to
 	// its own bubble beside it.
 	const timerActive = timerSeconds > 0 || isTimerFinished;
 	const musicActivity =
-		settingsMusicModeEnabled && settingsMusicCompactNotch && mediaInfo.has_media;
+		settingsMusicModeEnabled && settingsMusicCompactNotch && mediaInfo.has_media && musicActivityVisible;
 	const collapsedMode = musicActivity && !timerActive ? "music" : "status";
 	const showMusicBubble = musicActivity && timerActive && !isOpen && isVisible && !isHidden;
 	const showShelfBubble =
@@ -2471,6 +2474,12 @@ function App() {
 
 	// Music mode shows any time we have media info (playing or paused) and music mode setting is enabled
 	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled;
+	// A media session remains reachable on hover after its activity fades, or
+	// whenever the compact music display is disabled.
+	const showMusicOnStatusHover =
+		!isOpen && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
+		mediaInfo.has_media && (!musicActivityVisible || !settingsMusicCompactNotch);
+	const showCompactMusicIcons = isMusicMode || showMusicOnStatusHover;
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
@@ -2479,6 +2488,9 @@ function App() {
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
 		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 350;
+		if (showMusicOnStatusHover) {
+			return 170 + (settingsVisualizerEnabled ? 30 : 0);
+		}
 		if (bloomMode === "status" && isHovered) {
 			const totalWidgets = statusWidgets.left.length + statusWidgets.right.length;
 			return Math.min(200 + totalWidgets * 50, 380);
@@ -2528,12 +2540,10 @@ function App() {
 	};
 
 	const isCalendarMode = bloomMode === "calendar";
-	// Arrows beside the time switch panels once the open notch has been clicked,
-	// for mice without a scroll wheel. Hover alone keeps the notch uncluttered.
+	// Arrows switch between the two tool panels; wheel/swipe can also open one
+	// directly from the collapsed pill or a live activity.
 	const showPanelArrows =
-		isOpen &&
-		getCyclableModes().includes(bloomMode as ReturnType<typeof getCyclableModes>[number]) &&
-		getCyclableModes().length > 1;
+		isOpen && asNotchPanel(bloomMode) !== null && NOTCH_PANELS.filter(panelAvailable).length > 1;
 
 	// Close compact media player expansions when notch is unhovered or mode changes
 	useEffect(() => {
@@ -2614,13 +2624,17 @@ function App() {
 					onClick={(e) => {
 						e.stopPropagation();
 						// Clicking the notch is how it expands, into the panel it was last left on.
-						if (!isOpen) openNotch(openingPanel());
+						if (clickToOpen && !isOpen) openNotch(openingPanel());
 					}}
 					onHoverStart={() => {
 						releaseDeferredRef.current = false;
 						setIsHovered(true);
 						// Hovering the shelf cancels its post-drop auto-close.
 						if (bloomMode === "shelf") clearShelfCollapse();
+						if (!clickToOpen && bloomMode !== "announcement" && bloomMode !== "shelf") {
+							setIsOpen(true);
+							setBloomMode(settingsMusicModeEnabled && mediaInfo.has_media ? "music" : "status");
+						}
 					}}
 					onHoverEnd={releaseNotchHover}
 					style={{ originY: 0 }}
@@ -3002,9 +3016,9 @@ function App() {
 															animate={{ opacity: 1 }}
 															exit={{ opacity: 0 }}
 														>
-															{/* Left: visualizer (music) or weather (command-center, calendar) */}
+															{/* Left: music on hover while a paused session remains, otherwise status widgets */}
 															<div className="side-content left">
-																{isMusicMode && settingsVisualizerEnabled ? (
+																{showCompactMusicIcons && settingsVisualizerEnabled ? (
 																	<AnimatePresence>
 																		{settingsVisualizerEnabled && (
 																			<motion.div
@@ -3017,7 +3031,7 @@ function App() {
 																			</motion.div>
 																		)}
 																	</AnimatePresence>
-																) : !isMusicMode && isHovered && statusWidgets.left.length > 0 ? (
+																) : !showCompactMusicIcons && isHovered && statusWidgets.left.length > 0 ? (
 																	<motion.div
 																		key="left-widgets"
 																		className="passive-features-group"
@@ -3046,7 +3060,7 @@ function App() {
 																			transition={{ duration: 0.15 }}
 																			onClick={(e) => {
 																				e.stopPropagation();
-																				cycleBloomMode(-1);
+																				cyclePanel(-1);
 																			}}
 																		>
 																			<ChevronLeft size={12} strokeWidth={2.5} />
@@ -3100,7 +3114,7 @@ function App() {
 																			transition={{ duration: 0.15 }}
 																			onClick={(e) => {
 																				e.stopPropagation();
-																				cycleBloomMode(1);
+																				cyclePanel(1);
 																			}}
 																		>
 																			<ChevronRight size={12} strokeWidth={2.5} />
@@ -3112,9 +3126,9 @@ function App() {
 																)}
 															</div>
 
-															{/* Right: album art (music) or battery (command-center, calendar) */}
+															{/* Right: album art on a retained music session, otherwise status widgets */}
 															<div className="side-content right">
-																{isMusicMode && settingsAlbumArtEnabled ? (
+																{showCompactMusicIcons && (settingsAlbumArtEnabled || showMusicOnStatusHover) ? (
 																	<AnimatePresence mode="wait">
 																		<motion.div
 																			key="album-art"
@@ -3124,7 +3138,7 @@ function App() {
 																			exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
 																			transition={{ duration: 0.12 }}
 																		>
-																			{albumArtUrl && settingsCompactGlowEnabled && (
+																			{settingsAlbumArtEnabled && albumArtUrl && settingsCompactGlowEnabled && (
 																				<img
 																					src={albumArtUrl}
 																					alt=""
@@ -3147,7 +3161,7 @@ function App() {
 																			>
 																				<div className="album-art-inner">
 																					<AnimatePresence mode="wait" initial={false}>
-																						{albumArtUrl ? (
+																						{settingsAlbumArtEnabled && albumArtUrl ? (
 																							<motion.img
 																								key={`compact-art-${albumArtKey}`}
 																								src={albumArtUrl}
@@ -3180,7 +3194,7 @@ function App() {
 																			</button>
 																		</motion.div>
 																	</AnimatePresence>
-																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
+																) : !showCompactMusicIcons && isHovered && statusWidgets.right.length > 0 ? (
 																	<motion.div
 																		key="right-widgets"
 																		className="passive-features-group"
@@ -3792,18 +3806,8 @@ function App() {
 								opacity: { duration: 0.15 }
 							}}
 							onAnimationComplete={() => reportNotchRect.current()}
-							onHoverStart={() => {
-								cancelShelfBubbleDwell();
-								shelfBubbleDwell.current = window.setTimeout(() => {
-									shelfBubbleDwell.current = null;
-									setIsHovered(true);
-									openNotch("shelf");
-								}, SHELF_BUBBLE_DWELL_MS);
-							}}
-							onHoverEnd={cancelShelfBubbleDwell}
 							onClick={(e) => {
 								e.stopPropagation();
-								cancelShelfBubbleDwell();
 								setIsHovered(true);
 								openNotch("shelf");
 							}}
