@@ -54,9 +54,8 @@ import {
  * - Live activities (music, a set timer, a filled shelf) show a compact form in
  *   the pill or a bubble beside it, and opening one shows its own view, which
  *   stands alone (no panel arrows) and is never remembered as the last panel.
- *   Dragging files onto the notch also opens the shelf. Activities are never
- *   remembered as the last panel. Wheel/swipe navigation can reach all views
- *   directly from the collapsed pill, including compact music.
+ *   Dragging files onto the notch also opens the shelf. Wheel/swipe switches
+ *   between tool panels, including when a live activity occupies the pill.
  */
 type NotchPanel = "calendar" | "command-center";
 const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center"];
@@ -1647,35 +1646,21 @@ function App() {
 		return true;
 	}
 
-	// Wheel and swipe navigation works from the collapsed pill too. Include the
-	// resting view and active activities so a swipe on compact music can leave it.
-	const getCyclableModes = (): BloomMode[] => {
-		const order: BloomMode[] = ["command-center", "music", "status", "shelf", "calendar"];
-		return order.filter((mode) => {
-			if (mode === "music") {
-				return settingsMusicModeEnabled && mediaInfo.has_media;
-			}
-			if (mode === "shelf") return shelfItems.length > 0 || isDragHovering;
-			if (mode === "calendar") return settingsCalendarEnabled;
-			return true;
-		});
-	};
-
-	// Moves to the next (1) or previous (-1) view; returns whether it changed.
+	// Wheel and swipe navigate panels, even from a collapsed live activity.
+	// Music and shelf remain entry points through their activity affordances.
 	const cycleBloomMode = (direction: 1 | -1) => {
-		// Announcements are closed explicitly and are never part of the cycle.
-		const availableModes = getCyclableModes();
-		const currentIndex = availableModes.indexOf(bloomMode);
-		if (currentIndex === -1) return false;
-		const nextMode =
-			availableModes[(currentIndex + direction + availableModes.length) % availableModes.length];
+		if (bloomMode === "announcement") return false;
+		const panels = NOTCH_PANELS.filter(panelAvailable);
+		const currentIndex = panels.indexOf(bloomMode as NotchPanel);
+		const nextMode = currentIndex === -1
+			? openingPanel()
+			: panels[(currentIndex + direction + panels.length) % panels.length];
 		setIsOpen(true);
 		setBloomMode(nextMode);
 		return true;
 	};
 
-	// Arrows remain panel-only; live activities are reachable by wheel or their
-	// own compact buttons without making the arrows jump through activities.
+	// Arrows and wheel both stay within panels once one is open.
 	const cyclePanel = (direction: 1 | -1) => {
 		const panels = NOTCH_PANELS.filter(panelAvailable);
 		const index = panels.indexOf(bloomMode as NotchPanel);
@@ -2489,8 +2474,8 @@ function App() {
 	};
 
 	const isCalendarMode = bloomMode === "calendar";
-	// Arrows switch between the two tool panels; wheel/swipe also reaches the
-	// resting view and live activities.
+	// Arrows switch between the two tool panels; wheel/swipe can also open one
+	// directly from the collapsed pill or a live activity.
 	const showPanelArrows =
 		isOpen && asNotchPanel(bloomMode) !== null && NOTCH_PANELS.filter(panelAvailable).length > 1;
 
