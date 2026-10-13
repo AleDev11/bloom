@@ -2477,7 +2477,7 @@ function App() {
 	// A media session remains reachable on hover after its activity fades, or
 	// whenever the compact music display is disabled.
 	const showMusicOnStatusHover =
-		!isOpen && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
+		(!isOpen || !clickToOpen) && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
 		mediaInfo.has_media && (!musicActivityVisible || !settingsMusicCompactNotch);
 	const showCompactMusicIcons = isMusicMode || showMusicOnStatusHover;
 
@@ -2631,9 +2631,10 @@ function App() {
 						setIsHovered(true);
 						// Hovering the shelf cancels its post-drop auto-close.
 						if (bloomMode === "shelf") clearShelfCollapse();
-						if (!clickToOpen && bloomMode !== "announcement" && bloomMode !== "shelf") {
+						if (!clickToOpen && !isOpen && !musicActivity &&
+							bloomMode !== "announcement" && bloomMode !== "shelf") {
 							setIsOpen(true);
-							setBloomMode(settingsMusicModeEnabled && mediaInfo.has_media ? "music" : "status");
+							setBloomMode("status");
 						}
 					}}
 					onHoverEnd={releaseNotchHover}
