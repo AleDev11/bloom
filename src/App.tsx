@@ -2410,12 +2410,12 @@ function App() {
 
 	// Music mode shows any time we have media info (playing or paused) and music mode setting is enabled
 	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled;
-	// Once a paused session's activity fades, hovering the resting pill still
-	// offers a way back to music without leaving a persistent activity visible.
-	const showPausedMusicOnHover =
+	// A media session remains reachable on hover after its activity fades, or
+	// whenever the compact music display is disabled.
+	const showMusicOnStatusHover =
 		!isOpen && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
-		mediaInfo.has_media && !musicActivityVisible;
-	const showCompactMusicIcons = isMusicMode || showPausedMusicOnHover;
+		mediaInfo.has_media && (!musicActivityVisible || !settingsMusicCompactNotch);
+	const showCompactMusicIcons = isMusicMode || showMusicOnStatusHover;
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
@@ -2423,7 +2423,7 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		if (showPausedMusicOnHover) {
+		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
 		}
 		if (bloomMode === "status" && isHovered) {
@@ -2566,7 +2566,7 @@ function App() {
 						if (bloomMode === "shelf") clearShelfCollapse();
 						if (!clickToOpen && bloomMode !== "announcement" && bloomMode !== "shelf") {
 							setIsOpen(true);
-							setBloomMode(musicActivity ? "music" : "status");
+							setBloomMode(settingsMusicModeEnabled && mediaInfo.has_media ? "music" : "status");
 						}
 					}}
 					onHoverEnd={releaseNotchHover}
@@ -3061,7 +3061,7 @@ function App() {
 
 															{/* Right: album art on a retained music session, otherwise status widgets */}
 															<div className="side-content right">
-																{showCompactMusicIcons && (settingsAlbumArtEnabled || showPausedMusicOnHover) ? (
+																{showCompactMusicIcons && (settingsAlbumArtEnabled || showMusicOnStatusHover) ? (
 																	<AnimatePresence mode="wait">
 																		<motion.div
 																			key="album-art"
@@ -3094,7 +3094,7 @@ function App() {
 																			>
 																				<div className="album-art-inner">
 																					<AnimatePresence mode="wait" initial={false}>
-																										{settingsAlbumArtEnabled && albumArtUrl ? (
+																						{settingsAlbumArtEnabled && albumArtUrl ? (
 																							<motion.img
 																								key={`compact-art-${albumArtKey}`}
 																								src={albumArtUrl}
