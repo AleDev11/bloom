@@ -49,8 +49,8 @@ import {
 
 /**
  * The notch has two kinds of content:
- * - Panels are tools the user chooses. By default, a click opens the one it
- *   was last left on; the legacy setting opens on hover instead.
+ * - Panels are tools the user chooses. A click opens the last-used panel by
+ *   default, or a selected fixed panel when panel memory is turned off.
  * - Live activities (music, a set timer, a filled shelf) show a compact form in
  *   the pill or a bubble beside it, and opening one shows its own view, which
  *   stands alone (no panel arrows) and is never remembered as the last panel.
@@ -853,11 +853,15 @@ function App() {
 	const [settingsMusicModeEnabled, setSettingsMusicModeEnabled] = useState(
 		() => localStorage.getItem("bloom-music-mode-enabled") !== "false"
 	);
-	const [clickToOpen, setClickToOpen] = useState(
-		() => localStorage.getItem("bloom-notch-click-to-open") !== "false"
+	const [rememberPanelEnabled, setRememberPanelEnabled] = useState(
+		() => (localStorage.getItem("bloom-notch-remember-panel") ??
+			localStorage.getItem("bloom-notch-click-to-open")) !== "false"
 	);
-	const clickToOpenRef = useRef(clickToOpen);
-	clickToOpenRef.current = clickToOpen;
+	const rememberPanelEnabledRef = useRef(rememberPanelEnabled);
+	rememberPanelEnabledRef.current = rememberPanelEnabled;
+	const [defaultPanel, setDefaultPanel] = useState<NotchPanel>(() =>
+		asNotchPanel(localStorage.getItem("bloom-notch-default-panel")) ?? "calendar"
+	);
 	// The panel the open notch was last left on. Opening the notch returns to it,
 	// across restarts too (bloom-notch-last-panel).
 	const [lastPanel, setLastPanel] = useState<NotchPanel | null>(() =>
@@ -916,7 +920,10 @@ function App() {
 				setSettingsCalendarEnabled(getVal("bloom-calendar-enabled", "true") !== "false");
 				setSettingsTimerSoundEnabled(getVal("bloom-timer-sound-enabled", "true") !== "false");
 				setSettingsMusicModeEnabled(getVal("bloom-music-mode-enabled", "true") !== "false");
-				setClickToOpen(getVal("bloom-notch-click-to-open", "true") !== "false");
+				setRememberPanelEnabled(
+					(getVal("bloom-notch-remember-panel") ?? getVal("bloom-notch-click-to-open", "true")) !== "false"
+				);
+				setDefaultPanel(asNotchPanel(getVal("bloom-notch-default-panel")) ?? "calendar");
 				setShelfPersist(getVal("bloom-shelf-persist", "false") === "true");
 				setSettingsMusicCompactNotch(getVal("bloom-music-compact-notch", "true") !== "false");
 				setLastPanel(asNotchPanel(getVal("bloom-notch-last-panel")));
@@ -1067,7 +1074,9 @@ function App() {
 			"bloom-calendar-enabled": setSettingsCalendarEnabled,
 			"bloom-timer-sound-enabled": setSettingsTimerSoundEnabled,
 			"bloom-music-mode-enabled": setSettingsMusicModeEnabled,
-			"bloom-notch-click-to-open": setClickToOpen,
+			"bloom-notch-remember-panel": setRememberPanelEnabled,
+			"bloom-notch-default-panel": (v: unknown) =>
+				setDefaultPanel(asNotchPanel(v) ?? "calendar"),
 			"bloom-shelf-persist": setShelfPersist,
 			"bloom-music-compact-notch": setSettingsMusicCompactNotch,
 			"bloom-notch-last-panel": (v: unknown) => setLastPanel(asNotchPanel(v)),
@@ -1382,7 +1391,7 @@ function App() {
 		setIsNotchHovered(false);
 		if (isOpenRef.current) {
 			const panel = asNotchPanel(bloomModeRef.current);
-			if (panel && clickToOpenRef.current) rememberPanelRef.current(panel);
+			if (panel && rememberPanelEnabledRef.current) rememberPanelRef.current(panel);
 			setIsOpen(false);
 		}
 		setBloomMode((prev) =>
@@ -1858,14 +1867,12 @@ function App() {
 	restingModeRef.current = collapsedMode;
 	bloomModeRef.current = bloomMode;
 
-	// A click opens the panel the notch was last left on, if it is still
-	// available, else the calendar.
-	const openingPanel = (): NotchPanel =>
-		lastPanel && panelAvailable(lastPanel)
-			? lastPanel
-			: settingsCalendarEnabled
-				? "calendar"
-				: "command-center";
+	// A click opens the last-used panel when memory is enabled, otherwise the
+	// selected default. The controls panel is always available as a fallback.
+	const openingPanel = (): NotchPanel => {
+		const preferred = rememberPanelEnabled ? lastPanel ?? defaultPanel : defaultPanel;
+		return panelAvailable(preferred) ? preferred : "command-center";
+	};
 
 	// Expands the notch into a panel, or into an activity's own view.
 	const openNotch = (view: NotchPanel | "music" | "shelf") => {
@@ -2413,7 +2420,7 @@ function App() {
 	// A media session remains reachable on hover after its activity fades, or
 	// whenever the compact music display is disabled.
 	const showMusicOnStatusHover =
-		(!isOpen || !clickToOpen) && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
+		!isOpen && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
 		mediaInfo.has_media && (!musicActivityVisible || !settingsMusicCompactNotch);
 	const showCompactMusicIcons = isMusicMode || showMusicOnStatusHover;
 
@@ -2557,18 +2564,12 @@ function App() {
 					}}
 					onClick={(e) => {
 						e.stopPropagation();
-						// Clicking the notch is how it expands, into the panel it was last left on.
-						if (clickToOpen && !isOpen) openNotch(openingPanel());
+						if (!isOpen) openNotch(openingPanel());
 					}}
 					onHoverStart={() => {
 						setIsHovered(true);
 						// Hovering the shelf cancels its post-drop auto-close.
 						if (bloomMode === "shelf") clearShelfCollapse();
-						if (!clickToOpen && !isOpen && !musicActivity &&
-							bloomMode !== "announcement" && bloomMode !== "shelf") {
-							setIsOpen(true);
-							setBloomMode("status");
-						}
 					}}
 					onHoverEnd={releaseNotchHover}
 					style={{ originY: 0 }}
