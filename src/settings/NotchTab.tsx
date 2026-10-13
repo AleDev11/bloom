@@ -23,6 +23,8 @@ interface NotchTabProps {
 	handleNotchEdgeDelayChange: (val: number) => void;
 	calendarEnabled: boolean;
 	toggleCalendar: () => void;
+	notchClickToOpen: boolean;
+	toggleNotchClickToOpen: () => void;
 	timerSoundEnabled: boolean;
 	toggleTimerSound: () => void;
 	musicModeEnabled: boolean;
@@ -64,6 +66,8 @@ export function NotchTab({
 	handleNotchEdgeDelayChange,
 	calendarEnabled,
 	toggleCalendar,
+	notchClickToOpen,
+	toggleNotchClickToOpen,
 	timerSoundEnabled,
 	toggleTimerSound,
 	musicModeEnabled,
@@ -129,6 +133,17 @@ export function NotchTab({
 						/>
 					</SettingRow>
 				)}
+
+				<SettingRow
+					icon={PanelTop}
+					label="Click to Open"
+					desc="Open the last panel on click; turn off for hover navigation"
+				>
+					<label className="toggle-switch">
+						<input type="checkbox" checked={notchClickToOpen} onChange={toggleNotchClickToOpen} />
+						<span className="slider"></span>
+					</label>
+				</SettingRow>
 
 				<SettingRow icon={Calendar} label="Calendar & Timer" desc="Enable productivity split-view">
 					<label className="toggle-switch">

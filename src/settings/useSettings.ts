@@ -32,6 +32,9 @@ export function useSettings() {
 		() => localStorage.getItem("bloom-timer-sound-enabled") !== "false"
 	);
 	const [musicModeEnabled, setMusicModeEnabled] = useState(true);
+	const [notchClickToOpen, setNotchClickToOpen] = useState(
+		() => localStorage.getItem("bloom-notch-click-to-open") !== "false"
+	);
 	const [musicCompactNotch, setMusicCompactNotch] = useState(true);
 	const [shelfPersist, setShelfPersist] = useState(
 		() => localStorage.getItem("bloom-shelf-persist") === "true"
@@ -173,6 +176,7 @@ export function useSettings() {
 			apply(getVal("bloom-calendar-enabled"), setCalendarEnabled, readBool);
 			apply(getVal("bloom-timer-sound-enabled"), setTimerSoundEnabled, readBool);
 			apply(getVal("bloom-music-mode-enabled"), setMusicModeEnabled, readBool);
+			apply(getVal("bloom-notch-click-to-open"), setNotchClickToOpen, readBool);
 			apply(getVal("bloom-music-compact-notch"), setMusicCompactNotch, readBool);
 			apply(getVal("bloom-shelf-persist"), setShelfPersist, readBool);
 			apply(getVal("bloom-volume-overlay-enabled"), setVolumeOverlayEnabled, readBool);
@@ -265,6 +269,7 @@ export function useSettings() {
 		"bloom-calendar-enabled": setCalendarEnabled,
 		"bloom-timer-sound-enabled": setTimerSoundEnabled,
 		"bloom-music-mode-enabled": setMusicModeEnabled,
+		"bloom-notch-click-to-open": setNotchClickToOpen,
 		"bloom-music-compact-notch": setMusicCompactNotch,
 		"bloom-media-ambience-enabled": setMediaAmbienceEnabled,
 		"bloom-media-compact-glow-enabled": setMediaCompactGlowEnabled,
@@ -432,6 +437,12 @@ export function useSettings() {
 		const next = !musicModeEnabled;
 		setMusicModeEnabled(next);
 		saveSetting("bloom-music-mode-enabled", String(next));
+	};
+
+	const toggleNotchClickToOpen = () => {
+		const next = !notchClickToOpen;
+		setNotchClickToOpen(next);
+		saveSetting("bloom-notch-click-to-open", String(next));
 	};
 
 	const toggleMusicCompactNotch = () => {
@@ -848,6 +859,8 @@ export function useSettings() {
 		toggleTimerSound,
 		musicModeEnabled,
 		toggleMusicMode,
+		notchClickToOpen,
+		toggleNotchClickToOpen,
 		musicCompactNotch,
 		toggleMusicCompactNotch,
 		shelfPersist,

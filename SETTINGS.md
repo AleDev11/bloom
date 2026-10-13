@@ -61,6 +61,7 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-calendar-enabled`    | `"true"` / `"false"`              | `"true"` | Enable calendar/timer mode in the notch.                                                                 |
 | `bloom-music-mode-enabled`  | `"true"` / `"false"`              | `"true"` | Enable interactive music media widget.                                                                   |
 | `bloom-music-compact-notch` | `"true"` / `"false"`              | `"true"` | Show compact music display (visualizer + artwork) in collapsed notch.                                    |
+| `bloom-notch-click-to-open` | `"true"` / `"false"` | `"true"` | Click opens the last panel; when off, hovering opens the status view and wheel/swipe navigates modes. |
 | `bloom-notch-last-panel`    | `"calendar"` / `"command-center"` | (unset)  | Panel a click opens the notch into: the one it was last left on. Unset opens the calendar. Set by Bloom. |
 
 ### Shelf
