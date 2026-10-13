@@ -1653,8 +1653,7 @@ function App() {
 		const order: BloomMode[] = ["command-center", "music", "status", "shelf", "calendar"];
 		return order.filter((mode) => {
 			if (mode === "music") {
-				return settingsMusicModeEnabled && mediaInfo.has_media &&
-					(musicActivityVisible || (isOpen && bloomMode === "music"));
+				return settingsMusicModeEnabled && mediaInfo.has_media;
 			}
 			if (mode === "shelf") return shelfItems.length > 0 || isDragHovering;
 			if (mode === "calendar") return settingsCalendarEnabled;
@@ -2426,6 +2425,12 @@ function App() {
 
 	// Music mode shows any time we have media info (playing or paused) and music mode setting is enabled
 	const isMusicMode = mediaInfo.has_media && bloomMode === "music" && settingsMusicModeEnabled;
+	// Once a paused session's activity fades, hovering the resting pill still
+	// offers a way back to music without leaving a persistent activity visible.
+	const showPausedMusicOnHover =
+		!isOpen && isHovered && bloomMode === "status" && settingsMusicModeEnabled &&
+		mediaInfo.has_media && !musicActivityVisible;
+	const showCompactMusicIcons = isMusicMode || showPausedMusicOnHover;
 
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
@@ -2433,6 +2438,9 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
+		if (showPausedMusicOnHover) {
+			return 170 + (settingsVisualizerEnabled ? 30 : 0);
+		}
 		if (bloomMode === "status" && isHovered) {
 			const totalWidgets = statusWidgets.left.length + statusWidgets.right.length;
 			return Math.min(200 + totalWidgets * 50, 380);
@@ -2956,9 +2964,9 @@ function App() {
 															animate={{ opacity: 1 }}
 															exit={{ opacity: 0 }}
 														>
-															{/* Left: visualizer (music) or weather (command-center, calendar) */}
+															{/* Left: music on hover while a paused session remains, otherwise status widgets */}
 															<div className="side-content left">
-																{isMusicMode && settingsVisualizerEnabled ? (
+																{showCompactMusicIcons && settingsVisualizerEnabled ? (
 																	<AnimatePresence>
 																		{settingsVisualizerEnabled && (
 																			<motion.div
@@ -2971,7 +2979,7 @@ function App() {
 																			</motion.div>
 																		)}
 																	</AnimatePresence>
-																) : !isMusicMode && isHovered && statusWidgets.left.length > 0 ? (
+																) : !showCompactMusicIcons && isHovered && statusWidgets.left.length > 0 ? (
 																	<motion.div
 																		key="left-widgets"
 																		className="passive-features-group"
@@ -3066,9 +3074,9 @@ function App() {
 																)}
 															</div>
 
-															{/* Right: album art (music) or battery (command-center, calendar) */}
+															{/* Right: album art on a retained music session, otherwise status widgets */}
 															<div className="side-content right">
-																{isMusicMode && settingsAlbumArtEnabled ? (
+																{showCompactMusicIcons && (settingsAlbumArtEnabled || showPausedMusicOnHover) ? (
 																	<AnimatePresence mode="wait">
 																		<motion.div
 																			key="album-art"
@@ -3078,7 +3086,7 @@ function App() {
 																			exit={{ opacity: 0, y: -20, scale: 0.8, filter: "blur(8px)" }}
 																			transition={{ duration: 0.12 }}
 																		>
-																			{albumArtUrl && settingsCompactGlowEnabled && (
+																			{settingsAlbumArtEnabled && albumArtUrl && settingsCompactGlowEnabled && (
 																				<img
 																					src={albumArtUrl}
 																					alt=""
@@ -3101,7 +3109,7 @@ function App() {
 																			>
 																				<div className="album-art-inner">
 																					<AnimatePresence mode="wait" initial={false}>
-																						{albumArtUrl ? (
+																										{settingsAlbumArtEnabled && albumArtUrl ? (
 																							<motion.img
 																								key={`compact-art-${albumArtKey}`}
 																								src={albumArtUrl}
@@ -3134,7 +3142,7 @@ function App() {
 																			</button>
 																		</motion.div>
 																	</AnimatePresence>
-																) : !isMusicMode && isHovered && statusWidgets.right.length > 0 ? (
+																) : !showCompactMusicIcons && isHovered && statusWidgets.right.length > 0 ? (
 																	<motion.div
 																		key="right-widgets"
 																		className="passive-features-group"
