@@ -32,6 +32,14 @@ export function useSettings() {
 		() => localStorage.getItem("bloom-timer-sound-enabled") !== "false"
 	);
 	const [musicModeEnabled, setMusicModeEnabled] = useState(true);
+	const [notchRememberPanel, setNotchRememberPanel] = useState(
+		() => (localStorage.getItem("bloom-notch-remember-panel") ??
+			localStorage.getItem("bloom-notch-click-to-open")) !== "false"
+	);
+	const [notchDefaultPanel, setNotchDefaultPanel] = useState<"calendar" | "command-center">(
+		() => localStorage.getItem("bloom-notch-default-panel") === "command-center"
+			? "command-center" : "calendar"
+	);
 	const [musicCompactNotch, setMusicCompactNotch] = useState(true);
 	const [shelfPersist, setShelfPersist] = useState(
 		() => localStorage.getItem("bloom-shelf-persist") === "true"
@@ -177,6 +185,10 @@ export function useSettings() {
 			apply(getVal("bloom-calendar-enabled"), setCalendarEnabled, readBool);
 			apply(getVal("bloom-timer-sound-enabled"), setTimerSoundEnabled, readBool);
 			apply(getVal("bloom-music-mode-enabled"), setMusicModeEnabled, readBool);
+			apply(getVal("bloom-notch-remember-panel") ?? getVal("bloom-notch-click-to-open"),
+				setNotchRememberPanel, readBool);
+			apply(getVal("bloom-notch-default-panel"), setNotchDefaultPanel,
+				(v) => v === "command-center" ? "command-center" : "calendar");
 			apply(getVal("bloom-music-compact-notch"), setMusicCompactNotch, readBool);
 			apply(getVal("bloom-shelf-persist"), setShelfPersist, readBool);
 			apply(getVal("bloom-volume-overlay-enabled"), setVolumeOverlayEnabled, readBool);
@@ -271,6 +283,9 @@ export function useSettings() {
 		"bloom-calendar-enabled": setCalendarEnabled,
 		"bloom-timer-sound-enabled": setTimerSoundEnabled,
 		"bloom-music-mode-enabled": setMusicModeEnabled,
+		"bloom-notch-remember-panel": setNotchRememberPanel,
+		"bloom-notch-default-panel": (v: unknown) =>
+			setNotchDefaultPanel(v === "command-center" ? "command-center" : "calendar"),
 		"bloom-music-compact-notch": setMusicCompactNotch,
 		"bloom-media-ambience-enabled": setMediaAmbienceEnabled,
 		"bloom-media-compact-glow-enabled": setMediaCompactGlowEnabled,
@@ -438,6 +453,17 @@ export function useSettings() {
 		const next = !musicModeEnabled;
 		setMusicModeEnabled(next);
 		saveSetting("bloom-music-mode-enabled", String(next));
+	};
+
+	const toggleNotchRememberPanel = () => {
+		const next = !notchRememberPanel;
+		setNotchRememberPanel(next);
+		saveSetting("bloom-notch-remember-panel", String(next));
+	};
+
+	const changeNotchDefaultPanel = (panel: "calendar" | "command-center") => {
+		setNotchDefaultPanel(panel);
+		saveSetting("bloom-notch-default-panel", panel);
 	};
 
 	const toggleMusicCompactNotch = () => {
@@ -859,6 +885,10 @@ export function useSettings() {
 		toggleTimerSound,
 		musicModeEnabled,
 		toggleMusicMode,
+		notchRememberPanel,
+		toggleNotchRememberPanel,
+		notchDefaultPanel,
+		changeNotchDefaultPanel,
 		musicCompactNotch,
 		toggleMusicCompactNotch,
 		shelfPersist,

@@ -55,47 +55,17 @@ pub fn setup_shelf_drop(app: AppHandle) {
     });
 }
 
-/// Small PNG preview for shelf items, as a data URI. `None` for anything that
-/// is not a readable image (the frontend falls back to a generic file icon).
+/// Preview for a shelf item: a picture, the opening text, or neither (the
+/// frontend then shows an icon for the file type). See shelf_preview.rs.
 #[tauri::command]
-pub async fn shelf_thumbnail(path: String) -> Option<String> {
-    use base64::Engine;
-
-    let p = std::path::Path::new(&path);
-    let ext = p.extension()?.to_str()?.to_ascii_lowercase();
-    if !matches!(
-        ext.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" | "tif" | "tiff"
-    ) {
-        return None;
-    }
-    let meta = std::fs::metadata(p).ok()?;
-    if !meta.is_file() || meta.len() > 32 * 1024 * 1024 {
-        return None;
-    }
-
-    // Decode with dimension/allocation caps: a small, highly compressed file
-    // can still expand into a huge bitmap.
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(8192);
-    limits.max_image_height = Some(8192);
-    limits.max_alloc = Some(256 * 1024 * 1024);
-    let mut reader = image::ImageReader::open(p)
-        .ok()?
-        .with_guessed_format()
-        .ok()?;
-    reader.limits(limits);
-    let img = reader.decode().ok()?;
-    let thumb = img.thumbnail(256, 256);
-    let mut png_bytes: Vec<u8> = Vec::new();
-    thumb
-        .write_to(
-            &mut std::io::Cursor::new(&mut png_bytes),
-            image::ImageFormat::Png,
-        )
-        .ok()?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
-    Some(format!("data:image/png;base64,{}", b64))
+pub async fn shelf_thumbnail(path: String) -> crate::shelf_preview::ShelfPreview {
+    tauri::async_runtime::spawn_blocking(move || crate::shelf_preview::preview(&path))
+        .await
+        .unwrap_or(crate::shelf_preview::ShelfPreview {
+            thumb: None,
+            text: None,
+            folder: false,
+        })
 }
 
 /// Opens a shelf file in its default app. Uses the opener plugin's Rust API

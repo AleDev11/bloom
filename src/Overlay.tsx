@@ -10,6 +10,7 @@ import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MixerIcon, SpeakerIcon } from "./icons";
 import "./Overlay.css";
+import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 
 // ─── App Volume Mixer ───────────────────────────────────────────────────────
@@ -369,7 +370,7 @@ function VolumeNotch({
 			}
 			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
 		>
-			<div className="volume-notch-flares" />
+			<EdgeSurface edge="left" />
 			<motion.div
 				ref={shellRef}
 				className="volume-notch"
@@ -538,6 +539,7 @@ function BrightnessNotch({
 			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
 		>
 			<div className="brightness-notch">
+				<EdgeSurface edge="right" />
 				<motion.div
 					className="brightness-notch-content-group"
 					initial={{ opacity: 0, x: 10 }}
