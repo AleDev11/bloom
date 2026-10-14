@@ -2488,6 +2488,9 @@ function App() {
 		mediaInfo.has_media && (!musicActivityVisible || !settingsMusicCompactNotch);
 	const showCompactMusicIcons = isMusicMode || showMusicOnStatusHover;
 
+	// The 24-hour clock is ~16px narrower than the 12-hour one.
+	const clock24hTrim = timeFormat24h ? 16 : 0;
+
 	// Calculate width dynamically based on enabled features
 	const getDynamicWidth = () => {
 		if (bloomMode === "announcement" && announcement && !announcementDismissed) return 380;
@@ -2500,14 +2503,13 @@ function App() {
 		}
 		if (bloomMode === "status" && isHovered) {
 			const totalWidgets = statusWidgets.left.length + statusWidgets.right.length;
-			return Math.min(200 + totalWidgets * 50, 380);
+			return Math.min(200 + totalWidgets * 50, 380) - clock24hTrim;
 		}
 		if (isMusicMode && isOpen) return mediaLayout === "compact" ? 300 : 340;
 		if ((showPowerPulse || showLowBatteryPulse || showUpdatePulse) && !isHovered) return 200;
 
-		let w = 140;
+		let w = 140 - clock24hTrim;
 		if (isMusicMode) {
-			w = 140;
 			if (settingsVisualizerEnabled && isPlaying) w += 30;
 			if (settingsAlbumArtEnabled) w += 30;
 		}
