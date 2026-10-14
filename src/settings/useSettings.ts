@@ -108,6 +108,10 @@ export function useSettings() {
 		const raw = localStorage.getItem("bloom-dock-mode") || "smart";
 		return raw === "auto-hide" ? "smart" : raw;
 	});
+	const [dockEdgeDelay, setDockEdgeDelay] = useState(() => {
+		const val = localStorage.getItem("bloom-dock-edge-delay");
+		return val !== null ? parseInt(val) : 200;
+	});
 	const [notchMode, setNotchMode] = useState("fixed");
 	const [notchEdgeDelay, setNotchEdgeDelay] = useState(() => {
 		const val = localStorage.getItem("bloom-notch-edge-delay");
@@ -205,6 +209,7 @@ export function useSettings() {
 			apply(getVal("bloom-notch-mode"), setNotchMode, (v) => (v === "auto-hide" ? "smart" : v));
 			apply(getVal("bloom-notch-edge-delay"), setNotchEdgeDelay, parseInt);
 			apply(getVal("bloom-dock-mode"), setDockMode, (v) => (v === "auto-hide" ? "smart" : v));
+			apply(getVal("bloom-dock-edge-delay"), setDockEdgeDelay, parseInt);
 
 			const savedCity = getVal("bloom-weather-city");
 			if (savedCity) setCityName(savedCity);
@@ -247,6 +252,7 @@ export function useSettings() {
 	// ── Sync settings from other windows ──
 	useSettingsSync({
 		"bloom-dock-mode": setDockMode,
+		"bloom-dock-edge-delay": setDockEdgeDelay,
 		"bloom-notch-mode": setNotchMode,
 		"bloom-notch-edge-delay": setNotchEdgeDelay,
 		"bloom-dock-enabled": setDockEnabled,
@@ -616,6 +622,11 @@ export function useSettings() {
 		saveSetting("bloom-notch-mode", newMode);
 	};
 
+	const handleDockEdgeDelayChange = (val: number) => {
+		setDockEdgeDelay(val);
+		saveSetting("bloom-dock-edge-delay", val.toString());
+	};
+
 	const handleNotchEdgeDelayChange = (val: number) => {
 		setNotchEdgeDelay(val);
 		saveSetting("bloom-notch-edge-delay", val.toString());
@@ -881,6 +892,8 @@ export function useSettings() {
 		toggleDock,
 		dockMode,
 		setDockModeValue,
+		dockEdgeDelay,
+		handleDockEdgeDelayChange,
 		dockPreviewEnabled,
 		toggleDockPreview,
 		dockIconOnly,

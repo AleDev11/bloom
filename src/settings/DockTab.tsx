@@ -9,6 +9,7 @@ import {
 	Keyboard,
 	Sparkles,
 	RotateCcw,
+	Timer,
 	LayoutPanelLeft,
 	HardDrive,
 	Trash2,
@@ -48,6 +49,8 @@ interface DockTabProps {
 	toggleDock: () => void;
 	dockMode: string;
 	setDockModeValue: (mode: string) => void;
+	dockEdgeDelay: number;
+	handleDockEdgeDelayChange: (val: number) => void;
 	dockPreviewEnabled: boolean;
 	toggleDockPreview: () => void;
 	dockIconOnly: boolean;
@@ -78,6 +81,8 @@ export function DockTab({
 	toggleDock,
 	dockMode,
 	setDockModeValue,
+	dockEdgeDelay,
+	handleDockEdgeDelayChange,
 	dockPreviewEnabled,
 	toggleDockPreview,
 	dockIconOnly,
@@ -141,6 +146,28 @@ export function DockTab({
 								<option value="peek">Peek</option>
 							</select>
 						</SettingRow>
+
+						{dockMode !== "fixed" && (
+							<SettingRow
+								icon={Timer}
+								label="Peek Delay"
+								desc={
+									dockEdgeDelay === 0
+										? "Reveal instantly on bottom-edge contact"
+										: `Rest on the bottom edge for ${dockEdgeDelay}ms to reveal`
+								}
+							>
+								<input
+									type="range"
+									min="0"
+									max="800"
+									step="50"
+									value={dockEdgeDelay}
+									onChange={(e) => handleDockEdgeDelayChange(parseInt(e.target.value))}
+									className="settings-slider"
+								/>
+							</SettingRow>
+						)}
 
 						<SettingRow icon={Eye} label="Show App Previews" desc="Show window thumbnails on hover">
 							<label className="toggle-switch">

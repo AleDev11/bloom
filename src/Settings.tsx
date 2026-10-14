@@ -196,6 +196,8 @@ function SettingsApp() {
 							toggleDock={settings.toggleDock}
 							dockMode={settings.dockMode}
 							setDockModeValue={settings.setDockModeValue}
+							dockEdgeDelay={settings.dockEdgeDelay}
+							handleDockEdgeDelayChange={settings.handleDockEdgeDelayChange}
 							dockPreviewEnabled={settings.dockPreviewEnabled}
 							toggleDockPreview={settings.toggleDockPreview}
 							dockIconOnly={settings.dockIconOnly}
