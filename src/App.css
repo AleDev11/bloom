@@ -1784,6 +1784,7 @@ img {
 .cc-pill-info {
 	display: flex;
 	flex-direction: column;
+	min-width: 0;
 	line-height: 1.15;
 }
 
@@ -1797,6 +1798,10 @@ img {
 	font-size: 7.5px;
 	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.4));
 	font-weight: 500;
+	/* The connected network's name can be long. */
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* Active Monochrome pill states */
@@ -1816,6 +1821,41 @@ img {
 .cc-pill-tile.active .cc-pill-icon-wrapper {
 	background: var(--bloom-group-bg, rgba(0, 0, 0, 0.08));
 	color: var(--bloom-bg-expanded, #000);
+}
+
+/* Opens a tile's detail view from the controls panel. */
+.cc-pill-more {
+	margin-left: auto;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	opacity: 0.55;
+	cursor: pointer;
+	transition:
+		opacity 0.15s ease,
+		background 0.15s ease;
+}
+
+.cc-pill-more:hover {
+	opacity: 1;
+	background: var(--bloom-group-bg, rgba(255, 255, 255, 0.12));
+}
+
+.cc-pill-more svg {
+	width: 12px;
+	height: 12px;
+}
+
+.cc-pill-tile.active .cc-pill-more {
+	color: var(--bloom-bg-expanded, black);
 }
 
 /* Circular Actions Row */
