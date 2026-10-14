@@ -184,7 +184,7 @@ img {
 	outline-offset: 5px;
 }
 
-/* Live activities shown as squircles beside the collapsed pill:
+/* Live activities shown as rounded squares beside the collapsed pill:
    music on the right while a timer holds the pill, the shelf on the left. */
 .activity-bubble {
 	--bubble-bg: var(--bloom-bg, rgba(0, 0, 0, 0.8));
@@ -199,7 +199,7 @@ img {
 	justify-content: center;
 	gap: 4px;
 	border: none;
-	border-radius: 40%;
+	border-radius: 10px;
 	/* --notch-bg only exists inside the pill (.bloom), so use the theme
 	   colours it is built from, matching the pill in every theme and fading
 	   with it while it's hovered. */
@@ -212,22 +212,16 @@ img {
 	--bubble-bg: var(--bloom-bg-expanded, rgba(0, 0, 0, 0.92));
 }
 
-/* Four eased curves give both the round music activity and the count-width
-   shelf activity the same squircle silhouette. Keep the shape on a layer so
-   the button's keyboard focus outline remains visible. */
+/* Both the round music activity and the count-width shelf activity use the
+   compact album art's rounded square, the art's 6px sitting 4px inside this
+   layer's 10px. Keep the shape on a layer so the button's keyboard focus
+   outline remains visible. */
 .activity-bubble::before {
 	content: "";
 	position: absolute;
 	inset: 0;
 	background: var(--bubble-bg);
-	clip-path: shape(
-		from 50% 0,
-		curve to 100% 50% with 85% 0 / 100% 15%,
-		curve to 50% 100% with 100% 85% / 85% 100%,
-		curve to 0 50% with 15% 100% / 0 85%,
-		curve to 50% 0 with 0 15% / 15% 0,
-		close
-	);
+	border-radius: inherit;
 	transition: background-color 0.3s ease;
 }
 
@@ -238,7 +232,7 @@ img {
 .activity-bubble img {
 	width: 22px;
 	height: 22px;
-	border-radius: 50%;
+	border-radius: 6px;
 	object-fit: cover;
 }
 
@@ -271,13 +265,10 @@ img {
 	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.7));
 	cursor: pointer;
 	z-index: 11;
-	transition:
-		background 0.15s ease,
-		color 0.15s ease;
+	transition: color 0.15s ease;
 }
 
 .panel-arrow:hover {
-	background: rgba(255, 255, 255, 0.12);
 	color: var(--bloom-text, white);
 }
 
