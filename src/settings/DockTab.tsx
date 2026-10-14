@@ -26,7 +26,7 @@ const START_ICON_PRESETS = [
 	{ key: "bloom-colorful", src: "/bloom-colorful.png", label: "Colorful" },
 	{ key: "bloom-golden", src: "/bloom-golden.png", label: "Golden" },
 	{ key: "bloom-biscuit", src: "/bloom-biscuit.png", label: "Orange" },
-	{ key: "windows", src: "/windows.png", label: "Windows" }
+	{ key: "windows", src: "/windows-11.png", label: "Windows" }
 ];
 
 const startIconTileStyle = (active: boolean): CSSProperties => ({
@@ -412,7 +412,7 @@ export function DockTab({
 											draggable={false}
 										/>
 									) : (
-										<span style={{ fontSize: "20px" }}>+</span>
+										<Plus size={20} strokeWidth={2} />
 									)}
 								</div>
 								{startIcon !== "default" && (
