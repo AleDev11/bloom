@@ -2621,10 +2621,8 @@ fn update_dock_interaction(
                 if let Ok(rect) = MENU_RECT.try_lock() {
                     if let Some(r) = *rect {
                         let scale = dock_win.scale_factor().unwrap_or(1.0);
-                        let rx =
-                            win_pos.x + (r.x as f64 * scale) as i32 - (5.0 * scale) as i32;
-                        let ry =
-                            win_pos.y + (r.y as f64 * scale) as i32 - (5.0 * scale) as i32;
+                        let rx = win_pos.x + (r.x as f64 * scale) as i32 - (5.0 * scale) as i32;
+                        let ry = win_pos.y + (r.y as f64 * scale) as i32 - (5.0 * scale) as i32;
                         let rw = (r.width as f64 * scale) as i32 + (10.0 * scale) as i32;
                         let rh = (r.height as f64 * scale) as i32 + (10.0 * scale) as i32;
                         if cursor.x >= rx
@@ -3420,7 +3418,9 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
     if let Ok(Some(monitor)) = window.app_handle().primary_monitor() {
         let m_size = monitor.size();
         let m_pos = monitor.position();
-        let hwnd = window.hwnd().unwrap();
+        let Ok(hwnd) = window.hwnd() else {
+            return;
+        };
         let scale = monitor.scale_factor();
         let bloom_scale = crate::utils::get_bloom_scale(window.app_handle());
 
@@ -3453,9 +3453,9 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
                 SHAppBarMessage, ABE_BOTTOM, ABM_NEW, ABM_QUERYPOS, ABM_SETPOS, APPBARDATA,
             };
             use windows::Win32::UI::WindowsAndMessaging::{
-                GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_NOACTIVATE as WS_EX_NA,
-                WS_EX_TOOLWINDOW,
+                GetWindowLongPtrW, GetWindowRect, RegisterWindowMessageW, SetWindowLongPtrW,
+                SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
+                WS_EX_NOACTIVATE as WS_EX_NA, WS_EX_TOOLWINDOW,
             };
 
             // Set extended styles (ToolWindow and NoActivate)
@@ -3463,17 +3463,21 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
             ex_style |= (WS_EX_TOOLWINDOW.0 | WS_EX_NA.0) as usize;
             let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style as isize);
 
-            // Hide native taskbar first to free up space
-            set_taskbar_visibility(false, false);
-
+            let callback_message = RegisterWindowMessageW(windows::core::w!("BloomDockAppBar"));
+            if callback_message == 0 {
+                return;
+            }
             let mut abd = APPBARDATA {
                 cbSize: std::mem::size_of::<APPBARDATA>() as u32,
                 hWnd: hwnd,
+                uCallbackMessage: callback_message,
                 ..Default::default()
             };
 
             if !DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                SHAppBarMessage(ABM_NEW, &mut abd);
+                if SHAppBarMessage(ABM_NEW, &mut abd) == 0 {
+                    return;
+                }
                 DOCK_APPBAR_REGISTERED.store(true, Ordering::Relaxed);
             }
 
@@ -3492,6 +3496,9 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
             // ignoring what ABM_SETPOS might have tried to "correct" (like stacking on invisible taskbar)
             let final_y = m_pos.y + m_size.height as i32 - ph;
             let final_width = abd.rc.right - abd.rc.left;
+            if final_width <= 0 {
+                return;
+            }
 
             let mut current_rect = RECT::default();
             let mut already_positioned = false;
@@ -3507,8 +3514,8 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
                 }
             }
 
-            if !already_positioned {
-                let _ = SetWindowPos(
+            if !already_positioned
+                && SetWindowPos(
                     hwnd,
                     None,
                     abd.rc.left,
@@ -3516,15 +3523,30 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
                     final_width,
                     ph,
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
+                )
+                .is_err()
+            {
+                return;
+            }
+            let mut placed = RECT::default();
+            if GetWindowRect(hwnd, &mut placed).is_err()
+                || placed.left != abd.rc.left
+                || placed.top != final_y
+                || placed.right - placed.left != final_width
+                || placed.bottom - placed.top != ph
+            {
+                return;
             }
 
             // Re-assert topmost — same reason as register_appbar.
             re_assert_topmost(hwnd);
 
             // Always ensure the window is visible — show() is idempotent
-            if !window.is_visible().unwrap_or(false) {
-                let _ = window.show();
+            if !window.is_visible().unwrap_or(false) && window.show().is_err() {
+                return;
+            }
+            if window.is_visible().unwrap_or(false) && set_taskbar_visibility(false, false) {
+                NATIVE_TASKBAR_HIDDEN.store(true, Ordering::Relaxed);
             }
         }
     } else {
