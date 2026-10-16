@@ -3077,16 +3077,7 @@ pub async fn capture_window_thumbnail(
         let result = crate::utils::capture_hwnd_to_base64(hwnd, max_width, max_height);
 
         if let Some(ref img) = result {
-            if let Some(cache) = crate::state::THUMBNAIL_CACHE.get() {
-                if let Ok(mut guard) = cache.lock() {
-                    guard.insert(hwnd_key, (img.clone(), crate::utils::get_now_ms()));
-                    // Prune dead windows if cache size exceeds 15
-                    // Minimized windows (IsWindow == true) are kept intact
-                    if guard.len() > 15 {
-                        guard.retain(|&k, _| IsWindow(Some(HWND(k as *mut _))).as_bool());
-                    }
-                }
-            }
+            crate::services::cache_thumbnail(hwnd_key, img.clone());
         }
 
         result.map(|img| (img, focus_time))
@@ -3408,61 +3399,55 @@ pub fn get_disk_space() -> Result<u64, String> {
 
 #[tauri::command]
 pub fn get_network_speed() -> Result<(u64, u64), String> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static LAST_BYTES_SENT: AtomicU64 = AtomicU64::new(0);
-    static LAST_BYTES_RECV: AtomicU64 = AtomicU64::new(0);
-    static LAST_CHECK: AtomicU64 = AtomicU64::new(0);
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-
-    let last_check = LAST_CHECK.load(Ordering::Relaxed);
-    let elapsed = if last_check > 0 {
-        (now - last_check).max(1)
-    } else {
-        1000
-    };
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    static LAST_SAMPLE: OnceLock<Mutex<Option<(Instant, u64, u64)>>> = OnceLock::new();
 
     let (mut total_in, mut total_out) = (0u64, 0u64);
     unsafe {
-        let mut table_ptr: *mut windows::Win32::NetworkManagement::IpHelper::MIB_IF_TABLE2 =
-            std::ptr::null_mut();
-        let ret = windows::Win32::NetworkManagement::IpHelper::GetIfTable2(&mut table_ptr);
-        if ret.is_ok() && !table_ptr.is_null() {
-            let table = &*table_ptr;
-            let num_entries = table.NumEntries;
-            let rows = table.Table.as_ptr();
-            for i in 0..num_entries as usize {
-                let row = &*rows.add(i);
-                total_in += row.InOctets;
-                total_out += row.OutOctets;
-            }
-            windows::Win32::NetworkManagement::IpHelper::FreeMibTable(table_ptr as *const _);
+        // GetIfTable2 allocates the table and writes its address here.
+        let mut out = std::mem::MaybeUninit::<
+            *mut windows::Win32::NetworkManagement::IpHelper::MIB_IF_TABLE2,
+        >::uninit();
+        let ret = windows::Win32::NetworkManagement::IpHelper::GetIfTable2(out.as_mut_ptr());
+        if !ret.is_ok() {
+            return Err(format!("GetIfTable2 failed: {ret:?}"));
         }
+        let Some(table) = std::ptr::NonNull::new(out.assume_init()) else {
+            return Err("GetIfTable2 returned no table".to_string());
+        };
+        let table_ptr = table.as_ptr();
+        // `Table` is declared with one element but holds `NumEntries` rows, so
+        // read them through a pointer to the whole allocation, not the array.
+        let rows = std::slice::from_raw_parts(
+            std::ptr::addr_of!((*table_ptr).Table)
+                .cast::<windows::Win32::NetworkManagement::IpHelper::MIB_IF_ROW2>(),
+            table.as_ref().NumEntries as usize,
+        );
+        for row in rows {
+            total_in = total_in.saturating_add(row.InOctets);
+            total_out = total_out.saturating_add(row.OutOctets);
+        }
+        windows::Win32::NetworkManagement::IpHelper::FreeMibTable(table_ptr as *const _);
     }
 
-    let prev_sent = LAST_BYTES_SENT.swap(total_out, Ordering::Relaxed);
-    let prev_recv = LAST_BYTES_RECV.swap(total_in, Ordering::Relaxed);
-    LAST_CHECK.store(now, Ordering::Relaxed);
-
-    if last_check == 0 {
-        return Ok((0, 0));
-    }
-
-    let sent_per_sec = if total_out > prev_sent {
-        ((total_out - prev_sent) * 1000) / elapsed
+    let now = Instant::now();
+    let mut last = LAST_SAMPLE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let speed = if let Some((previous, sent, recv)) = *last {
+        let elapsed_ms = now.duration_since(previous).as_millis().max(1);
+        let rate = |current: u64, previous: u64| {
+            ((current.saturating_sub(previous) as u128 * 1000) / elapsed_ms).min(u64::MAX as u128)
+                as u64
+        };
+        (rate(total_out, sent), rate(total_in, recv))
     } else {
-        0
+        (0, 0)
     };
-    let recv_per_sec = if total_in > prev_recv {
-        ((total_in - prev_recv) * 1000) / elapsed
-    } else {
-        0
-    };
-
-    Ok((sent_per_sec, recv_per_sec))
+    *last = Some((now, total_out, total_in));
+    Ok(speed)
 }
 
 #[tauri::command]

@@ -509,16 +509,52 @@ unsafe extern "system" fn focus_event_proc(
         let _guard = ThumbnailCaptureGuard;
 
         if let Some(img) = crate::utils::capture_hwnd_to_base64(hwnd, 320, 200) {
-            if let Some(cache) = crate::state::THUMBNAIL_CACHE.get() {
-                if let Ok(mut guard) = cache.lock() {
-                    guard.insert(hwnd_raw, (img, crate::utils::get_now_ms()));
-                }
-            }
+            cache_thumbnail(hwnd_raw, img);
         }
     });
 }
 
 static THUMB_CAPTURE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+const MAX_CACHED_THUMBNAILS: usize = 15;
+
+fn trim_thumbnail_cache(
+    cache: &mut std::collections::HashMap<isize, (String, i64)>,
+    newest: isize,
+    is_live: impl Fn(isize) -> bool,
+) {
+    cache.retain(|&key, _| is_live(key));
+    while cache.len() > MAX_CACHED_THUMBNAILS {
+        let oldest = cache
+            .iter()
+            .filter(|(key, _)| **key != newest)
+            .min_by_key(|(_, (_, timestamp))| *timestamp)
+            .map(|(key, _)| *key);
+        if let Some(key) = oldest {
+            cache.remove(&key);
+        } else {
+            break;
+        }
+    }
+}
+
+pub fn cache_thumbnail(hwnd: isize, image: String) {
+    let Some(cache) = crate::state::THUMBNAIL_CACHE.get() else {
+        return;
+    };
+    let Ok(mut guard) = cache.lock() else {
+        return;
+    };
+    guard.insert(hwnd, (image, crate::utils::get_now_ms()));
+    if guard.len() <= MAX_CACHED_THUMBNAILS {
+        return;
+    }
+
+    use windows::Win32::UI::WindowsAndMessaging::IsWindow;
+    trim_thumbnail_cache(&mut guard, hwnd, |key| unsafe {
+        IsWindow(Some(HWND(key as *mut _))).as_bool()
+    });
+}
 
 struct ThumbnailCaptureGuard;
 
@@ -592,16 +628,7 @@ unsafe extern "system" fn thumbnail_capture_proc(
 
         let hwnd = HWND(hwnd_raw as *mut _);
         if let Some(img) = crate::utils::capture_hwnd_to_base64(hwnd, 320, 200) {
-            if let Some(cache) = crate::state::THUMBNAIL_CACHE.get() {
-                if let Ok(mut guard) = cache.lock() {
-                    guard.insert(hwnd_raw, (img, crate::utils::get_now_ms()));
-                    if guard.len() > 15 {
-                        use windows::Win32::UI::WindowsAndMessaging::IsWindow;
-                        guard
-                            .retain(|&k, _| unsafe { IsWindow(Some(HWND(k as *mut _))).as_bool() });
-                    }
-                }
-            }
+            cache_thumbnail(hwnd_raw, img);
         }
     });
 }
@@ -4253,7 +4280,7 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 mod tests {
     use super::{
         is_helper_name, is_launchable_entry, notch_mode_reserves_work_area, pack_cursor,
-        unpack_cursor, win_number_index,
+        trim_thumbnail_cache, unpack_cursor, win_number_index,
     };
 
     #[test]
@@ -4262,6 +4289,17 @@ mod tests {
             let point = windows::Win32::Foundation::POINT { x, y };
             assert_eq!(unpack_cursor(pack_cursor(point)), point);
         }
+    }
+
+    #[test]
+    fn thumbnail_cache_evicts_oldest_live_windows() {
+        let mut cache = (0..20)
+            .map(|key| (key, (String::new(), key as i64)))
+            .collect();
+        trim_thumbnail_cache(&mut cache, 19, |_| true);
+        assert_eq!(cache.len(), 15);
+        assert!(cache.contains_key(&19));
+        assert!((0..5).all(|key| !cache.contains_key(&key)));
     }
 
     #[test]
