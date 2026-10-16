@@ -68,6 +68,9 @@ use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Com::CoTaskMemAlloc;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
+use windows::Win32::System::WinRT::{
+    CreateDispatcherQueueController, DispatcherQueueOptions, DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT,
+};
 use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, GetClientRect, IsWindow, RegisterClassW, SetWindowPos,
@@ -117,6 +120,9 @@ struct Backdrop {
     backdrop_brush: CompositionBrush,
     compositor: Compositor,
     factory: ID2D1Factory,
+    /// Keeps the thread's DispatcherQueue alive for as long as the
+    /// compositor is in use.
+    _dispatcher: Option<windows::System::DispatcherQueueController>,
 }
 
 // The compositor's objects are agile; the HWND is kept as isize (`HWND` is
@@ -129,7 +135,12 @@ fn diag(message: String) {
     use std::collections::HashSet;
     use std::sync::OnceLock;
     static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    if SEEN.get_or_init(Default::default).lock().unwrap().insert(message.clone()) {
+    if SEEN
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .insert(message.clone())
+    {
         eprintln!("[glass] {message}");
     }
 }
@@ -238,6 +249,26 @@ fn create_backdrop() -> Option<Backdrop> {
         enable_host_backdrop(hwnd);
 
         let _ = RoInitialize(RO_INIT_MULTITHREADED);
+        // The compositor needs a DispatcherQueue on the thread that creates
+        // it (the Win32 requirement for the visual layer). If the thread
+        // already has one the call reports that, which is just as good.
+        let options = DispatcherQueueOptions {
+            dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
+            threadType: DQTYPE_THREAD_CURRENT,
+            apartmentType: DQTAT_COM_NONE,
+        };
+        let dispatcher = match CreateDispatcherQueueController(options) {
+            Ok(controller) => {
+                diag("dispatcher queue created".into());
+                Some(controller)
+            }
+            Err(e) => {
+                diag(format!(
+                    "CreateDispatcherQueueController: {e:?} (thread may already have one)"
+                ));
+                None
+            }
+        };
         let compositor = match Compositor::new() {
             Ok(c) => c,
             Err(e) => {
@@ -262,16 +293,14 @@ fn create_backdrop() -> Option<Backdrop> {
         diag("desktop window target ok".into());
         let root = compositor.CreateContainerVisual().ok()?;
         target.SetRoot(&root).ok()?;
-        let backdrop_brush: CompositionBrush = match compositor
-            .CreateHostBackdropBrush()
-            .and_then(|b| b.cast())
-        {
-            Ok(b) => b,
-            Err(e) => {
-                diag(format!("CreateHostBackdropBrush failed: {e:?}"));
-                return None;
-            }
-        };
+        let backdrop_brush: CompositionBrush =
+            match compositor.CreateHostBackdropBrush().and_then(|b| b.cast()) {
+                Ok(b) => b,
+                Err(e) => {
+                    diag(format!("CreateHostBackdropBrush failed: {e:?}"));
+                    return None;
+                }
+            };
         diag("host backdrop brush ok".into());
         let factory: ID2D1Factory =
             D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, None).ok()?;
@@ -284,6 +313,7 @@ fn create_backdrop() -> Option<Backdrop> {
             backdrop_brush,
             compositor,
             factory,
+            _dispatcher: dispatcher,
         })
     }
 }
@@ -552,7 +582,9 @@ fn blur_available() -> bool {
         );
         let mut power = SYSTEM_POWER_STATUS::default();
         let saver = GetSystemPowerStatus(&mut power).is_ok() && power.SystemStatusFlag == 1;
-        diag(format!("blur_available: transparency={transparency} saver={saver}"));
+        diag(format!(
+            "blur_available: transparency={transparency} saver={saver}"
+        ));
         transparency != 0 && !saver
     }
 }

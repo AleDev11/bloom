@@ -76,6 +76,7 @@ windows = { version = "0.61", features = [
 	"UI_Composition_Desktop",
 	"Win32_Graphics_Direct2D",
 	"Win32_Graphics_Direct2D_Common",
+	"System",
 	"Win32_System_WinRT",
 	"Win32_System_WinRT_Composition"
 ] }
