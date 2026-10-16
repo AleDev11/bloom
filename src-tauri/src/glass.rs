@@ -115,6 +115,9 @@ struct PieceVisual {
 
 struct Backdrop {
     hwnd: isize,
+    /// The target owns the window's visual tree: dropping it closes the
+    /// root, so it must live as long as the compositor does.
+    _target: windows::UI::Composition::Desktop::DesktopWindowTarget,
     root: ContainerVisual,
     pieces: Vec<PieceVisual>,
     backdrop_brush: CompositionBrush,
@@ -308,6 +311,7 @@ fn create_backdrop() -> Option<Backdrop> {
 
         Some(Backdrop {
             hwnd: hwnd.0 as isize,
+            _target: target,
             root,
             pieces: Vec::new(),
             backdrop_brush,
