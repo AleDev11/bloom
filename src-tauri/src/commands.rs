@@ -2888,15 +2888,17 @@ pub fn clear_volume_mixer_rect() {
 /// Unregisters the notch and dock AppBars so Windows gives their work area back.
 pub fn release_appbars(handle: &AppHandle) {
     if let Some(w) = handle.get_webview_window("main") {
-        if MAIN_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-            unregister_appbar_native(w.hwnd().unwrap());
+        if let Ok(hwnd) = w.hwnd() {
+            unregister_appbar_native(hwnd);
         }
     }
     if let Some(w) = handle.get_webview_window("dock") {
-        if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-            unregister_appbar_native(w.hwnd().unwrap());
+        if let Ok(hwnd) = w.hwnd() {
+            unregister_appbar_native(hwnd);
         }
     }
+    MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
+    DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
 }
 
 /// Restore the native taskbar, unregister Bloom's appbars, and exit gracefully.

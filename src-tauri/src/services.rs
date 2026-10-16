@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU8, Ordering},
     Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -1620,31 +1620,10 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 }
 
                 // Enforce native taskbar hiding (periodic check)
-                if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) {
-                    use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, IsWindowVisible};
-                    let tray_class = windows::core::PCSTR(c"Shell_TrayWnd".as_ptr() as *const u8);
-                    let secondary_tray_class =
-                        windows::core::PCSTR(c"Shell_SecondaryTrayWnd".as_ptr() as *const u8);
-
-                    let mut should_rehide = false;
-                    if let Ok(tray_hwnd) = FindWindowA(tray_class, windows::core::PCSTR::null()) {
-                        if IsWindowVisible(tray_hwnd).as_bool() {
-                            should_rehide = true;
-                        }
-                    }
-                    if !should_rehide {
-                        if let Ok(secondary_tray_hwnd) =
-                            FindWindowA(secondary_tray_class, windows::core::PCSTR::null())
-                        {
-                            if IsWindowVisible(secondary_tray_hwnd).as_bool() {
-                                should_rehide = true;
-                            }
-                        }
-                    }
-
-                    if should_rehide {
-                        set_taskbar_visibility(false, false);
-                    }
+                if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed)
+                    && (refresh_taskbar_owner() || any_native_taskbar_visible())
+                {
+                    set_taskbar_visibility(false, false);
                 }
             }
 
@@ -3346,7 +3325,7 @@ pub fn register_appbar(window: tauri::WebviewWindow) {
         unsafe {
             use windows::Win32::Foundation::RECT;
             use windows::Win32::UI::Shell::{
-                SHAppBarMessage, ABE_TOP, ABM_NEW, ABM_QUERYPOS, ABM_SETPOS, APPBARDATA,
+                SHAppBarMessage, ABE_TOP, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, APPBARDATA,
             };
             use windows::Win32::UI::WindowsAndMessaging::{
                 GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
@@ -3362,11 +3341,16 @@ pub fn register_appbar(window: tauri::WebviewWindow) {
             let mut abd = APPBARDATA {
                 cbSize: std::mem::size_of::<APPBARDATA>() as u32,
                 hWnd: hwnd,
+                uCallbackMessage: 0x8041, // WM_APP + 0x41, reserved for the notch AppBar
                 ..Default::default()
             };
 
             if !MAIN_APPBAR_REGISTERED.load(Ordering::Relaxed) {
-                SHAppBarMessage(ABM_NEW, &mut abd);
+                let _ = SHAppBarMessage(ABM_REMOVE, &mut abd);
+                if SHAppBarMessage(ABM_NEW, &mut abd) == 0 {
+                    eprintln!("Bloom: notch AppBar registration failed");
+                    return;
+                }
                 MAIN_APPBAR_REGISTERED.store(true, Ordering::Relaxed);
             }
 
@@ -3551,7 +3535,8 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
         unsafe {
             use windows::Win32::Foundation::RECT;
             use windows::Win32::UI::Shell::{
-                SHAppBarMessage, ABE_BOTTOM, ABM_NEW, ABM_QUERYPOS, ABM_SETPOS, APPBARDATA,
+                SHAppBarMessage, ABE_BOTTOM, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS,
+                APPBARDATA,
             };
             use windows::Win32::UI::WindowsAndMessaging::{
                 GetWindowLongPtrW, GetWindowRect, RegisterWindowMessageW, SetWindowLongPtrW,
@@ -3576,7 +3561,9 @@ fn register_dock_appbar_inner(window: tauri::WebviewWindow, attempt: i32) {
             };
 
             if !DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
+                let _ = SHAppBarMessage(ABM_REMOVE, &mut abd);
                 if SHAppBarMessage(ABM_NEW, &mut abd) == 0 {
+                    eprintln!("Bloom: dock AppBar registration failed");
                     return;
                 }
                 DOCK_APPBAR_REGISTERED.store(true, Ordering::Relaxed);
@@ -3903,7 +3890,7 @@ fn reposition_all_windows(app_handle: &AppHandle) {
     // a dock that the user had previously disabled.
     if crate::utils::dock_enabled() {
         if let Some(dock_win) = app_handle.get_webview_window("dock") {
-            if DOCK_APPBAR_REGISTERED.load(Ordering::Relaxed) {
+            if get_setting_str(app_handle, "bloom-dock-mode").as_deref() == Some("fixed") {
                 register_dock_appbar(dock_win);
             } else {
                 // Auto-hide mode: reposition dock at bottom of screen
@@ -3986,12 +3973,18 @@ fn reposition_autohide_dock(app_handle: &AppHandle, dock_win: tauri::WebviewWind
     });
 }
 
+static TASKBAR_CREATED_MESSAGE: AtomicU32 = AtomicU32::new(0);
+
 pub fn setup_display_change_monitor(app_handle: AppHandle) {
     let _ = crate::state::DISPLAY_MONITOR_HANDLE.set(app_handle);
 
     std::thread::spawn(|| unsafe {
         use windows::Win32::System::LibraryLoader::GetModuleHandleW;
         use windows::Win32::UI::WindowsAndMessaging::*;
+
+        let taskbar_created =
+            RegisterWindowMessageA(windows::core::PCSTR(c"TaskbarCreated".as_ptr() as *const u8));
+        TASKBAR_CREATED_MESSAGE.store(taskbar_created, Ordering::Relaxed);
 
         let class_name = windows::core::PCSTR(c"BloomDisplayMonitor".as_ptr() as *const u8);
         let h_inst = GetModuleHandleW(None).unwrap_or_default().into();
@@ -4051,6 +4044,27 @@ unsafe extern "system" fn display_monitor_proc(
     const PBT_APMRESUMESUSPEND: u32 = 0x0007;
     const WM_DWMCOLORIZATIONCOLORCHANGED: u32 = 0x0320;
     const WM_SETTINGCHANGE: u32 = 0x001A;
+
+    if msg != 0 && msg == TASKBAR_CREATED_MESSAGE.load(Ordering::Relaxed) {
+        // Explorer has rebuilt its AppBar list. A primary-monitor DPI change
+        // can send the same broadcast, so re-register in either case.
+        MAIN_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
+        DOCK_APPBAR_REGISTERED.store(false, Ordering::Relaxed);
+        if let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() {
+            let ah = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                for delay in [300, 1200] {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    if SHUTTING_DOWN.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    refresh_taskbar_owner();
+                    reposition_all_windows(&ah);
+                }
+            });
+        }
+        return LRESULT(0);
+    }
 
     match msg {
         WM_DISPLAYCHANGE => {
