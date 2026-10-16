@@ -102,6 +102,7 @@ Edit `settings.json` with any text editor while Bloom is running. Changes are ap
 | `bloom-theme-saturation` | float string                                     | `"0.50"`    | Color saturation for custom/adaptive themes (0.0 to 1.0).                                                                                                   |
 | `bloom-theme-brightness` | float string                                     | `"0.15"`    | Background brightness for custom/adaptive themes (0.0 to 1.0).                                                                                              |
 | `bloom-corners-enabled`  | `"true"` / `"false"`                             | `"false"`   | Render rounded screen corner overlays on top edges.                                                                                                         |
+| `bloom-glass`            | `"true"` / `"false"`                             | `"true"`    | Frosted, see-through notch, dock and volume/brightness overlays (native blur behind the surfaces). Keep off to save a little power on slower PCs.            |
 
 ### Status Widgets
 

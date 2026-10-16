@@ -6,6 +6,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getVersion } from "@tauri-apps/api/app";
 import type { UpdateCheckResult } from "./updater";
 import "./App.css";
+import "./glass.css";
 import { initTheme } from "./theme";
 import {
 	PlayIcon,
@@ -20,6 +21,7 @@ import {
 import { CompactMediaPlayer } from "./CompactMediaPlayer";
 import { useWeather } from "./hooks/useWeather";
 import { useSettingsSync } from "./hooks/useSettingsSync";
+import { useGlass, useGlassEnabled } from "./hooks/useGlass";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
 import { useAnnouncement } from "./hooks/useAnnouncement";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
@@ -696,6 +698,16 @@ function App() {
 		!startupAnimating &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
 			(notchMode === "peek" && interactionState === "none" && !eventPeek));
+
+	// Real frosted glass under the notch and its concave bridges (see glass.rs).
+	const glassEnabled = useGlassEnabled();
+	useGlass(
+		() =>
+			windowLabel === "main"
+				? [{ pill: bloomRef.current, edge: "top", flares: isImpacted }]
+				: [],
+		glassEnabled
+	);
 
 	useEffect(() => {
 		if (isAnyInteraction) {

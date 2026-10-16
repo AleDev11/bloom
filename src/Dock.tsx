@@ -3,9 +3,11 @@ import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./Dock.css";
+import "./glass.css";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 import { useSettingsSync } from "./hooks/useSettingsSync";
+import { useGlass, useGlassEnabled } from "./hooks/useGlass";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 
 import { mergeTrayApps, selectDockTrayApps, type AppInfo, type TrayApp } from "./dockApps";
@@ -236,6 +238,19 @@ const Dock = memo(function Dock() {
 	// Nearly full width — 24px margin per side at the visual (scaled) size.
 	// Pre-transform: visual = width * scale, so width = (viewport - 48*scale) / scale.
 	const adaptiveWidth = (viewportWidth - 48 * scale) / scale;
+
+	// Real frosted glass under the dock and its concave feet (see glass.rs).
+	const glassEnabled = useGlassEnabled();
+	useGlass(
+		() => [
+			{
+				pill: dockRef.current,
+				edge: "bottom",
+				flares: isExpanded && !isHidden
+			}
+		],
+		glassEnabled
+	);
 
 	useEffect(() => {
 		let cleared = false;

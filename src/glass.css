@@ -1,0 +1,51 @@
+/* ── Glass (Appearance → Glass, <html class="glass">) ──────────────────────
+   The compositor frosts what is behind each surface (glass.rs, useGlass);
+   this is the material on top: a lighter cut of the theme colour so the frost
+   shows through, a hairline rim and a soft sheen on the pill.
+
+   `html.no-blur` is set when Windows won't blur (transparency effects off,
+   energy saver on). Glass is still wanted, so the surfaces keep the
+   translucent tint and the rim — just without the frost, instead of snapping
+   back to the near-opaque base. */
+
+html.glass:not(.no-blur) .bloom,
+html.glass:not(.no-blur) .dock,
+html.glass:not(.no-blur) .volume-notch-wrapper,
+html.glass:not(.no-blur) .brightness-notch {
+	--surface-bg: color-mix(in srgb, var(--bloom-bg, rgba(0, 0, 0, 0.8)) 52%, transparent);
+}
+
+html.glass:not(.no-blur) .bloom.expanded {
+	--surface-bg: color-mix(in srgb, var(--bloom-bg-expanded, rgba(0, 0, 0, 0.92)) 60%, transparent);
+}
+
+/* The pill's rim and sheen; the layer mask in EdgeSurface.css keeps them
+   inside the material, flares included. */
+html.glass:not(.no-blur) .edge-surface::before {
+	box-shadow:
+		inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
+		0 0 0 1px var(--surface-solid);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 60%);
+}
+
+/* No-blur fallback. */
+html.glass.no-blur .bloom,
+html.glass.no-blur .volume-notch-wrapper,
+html.glass.no-blur .brightness-notch {
+	--surface-bg: color-mix(in srgb, var(--bloom-bg, rgba(0, 0, 0, 0.8)) 62%, transparent);
+}
+
+html.glass.no-blur .bloom.expanded {
+	--surface-bg: color-mix(in srgb, var(--bloom-bg-expanded, rgba(0, 0, 0, 0.92)) 66%, transparent);
+}
+
+html.glass.no-blur .dock {
+	--surface-bg: color-mix(in srgb, var(--bloom-bg, rgba(0, 0, 0, 0.8)) 62%, transparent);
+}
+
+html.glass.no-blur .edge-surface::before {
+	box-shadow:
+		inset 0 0 0 0.5px rgba(255, 255, 255, 0.1),
+		0 0 0 1px var(--surface-solid);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 60%);
+}

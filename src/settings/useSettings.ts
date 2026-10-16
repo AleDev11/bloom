@@ -62,6 +62,9 @@ export function useSettings() {
 	const [cornersEnabled, setCornersEnabled] = useState(
 		() => localStorage.getItem("bloom-corners-enabled") === "true"
 	);
+	const [glassEnabled, setGlassEnabled] = useState(
+		() => localStorage.getItem("bloom-glass") !== "false"
+	);
 	const [showUpdateIndicator, setShowUpdateIndicator] = useState(
 		() => localStorage.getItem("bloom-show-update-indicator") !== "false"
 	);
@@ -196,6 +199,7 @@ export function useSettings() {
 			apply(getVal("bloom-media-ambience-enabled"), setMediaAmbienceEnabled, readBool);
 			apply(getVal("bloom-media-compact-glow-enabled"), setMediaCompactGlowEnabled, readBool);
 			apply(getVal("bloom-corners-enabled"), setCornersEnabled, readBool);
+			apply(getVal("bloom-glass"), setGlassEnabled, readBool);
 			apply(getVal("bloom-time-format-24h"), setTimeFormat24h, readBool);
 			apply(getVal("bloom-show-update-indicator"), setShowUpdateIndicator, readBool);
 			apply(getVal("bloom-auto-update"), setAutoUpdate, readBool);
@@ -291,6 +295,7 @@ export function useSettings() {
 		"bloom-media-compact-glow-enabled": setMediaCompactGlowEnabled,
 		"bloom-media-layout": setMediaLayout,
 		"bloom-corners-enabled": setCornersEnabled,
+		"bloom-glass": setGlassEnabled,
 		"bloom-show-update-indicator": setShowUpdateIndicator,
 		"bloom-time-format-24h": setTimeFormat24h,
 		"bloom-low-battery-threshold": setLowBatteryThreshold,
@@ -523,6 +528,12 @@ export function useSettings() {
 		const next = !cornersEnabled;
 		setCornersEnabled(next);
 		saveSetting("bloom-corners-enabled", String(next));
+	};
+
+	const toggleGlass = () => {
+		const next = !glassEnabled;
+		setGlassEnabled(next);
+		saveSetting("bloom-glass", String(next));
 	};
 
 	const toggleUpdateIndicator = () => {
@@ -861,6 +872,8 @@ export function useSettings() {
 		handleScaleChange,
 		cornersEnabled,
 		toggleCorners,
+		glassEnabled,
+		toggleGlass,
 
 		// Theme
 		themeMode,

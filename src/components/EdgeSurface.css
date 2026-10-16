@@ -58,10 +58,11 @@
 	bottom: 13px;
 }
 
-/* Each flare is a 13px concave curve plus 1px that overlaps the pill. The
-   curve is a cubic whose handles reach past a circle's (10px instead of
-   7.2px), so it eases into the screen edge and the pill's side instead of
-   meeting them with a crease. One shape per axis, mirrored per corner. */
+/* Each flare is a 13px concave fillet plus 1px that overlaps the pill. The
+   curve is a circular arc, not a softer cubic: the native glass behind it
+   (glass.rs) cuts the same disc with a radial gradient, and a hand-picked
+   cubic would leave the frost a couple of pixels short of, or past, the
+   material. One shape per axis, mirrored per corner. */
 .edge-surface-flare {
 	position: absolute;
 	background: var(--surface-solid);
@@ -74,28 +75,30 @@
 	opacity: 1;
 }
 
-/* Drawn as the top edge's left flare. */
+/* Drawn as the top edge's left flare: fillet centered at the box's
+   bottom-left corner. */
 .edge-surface--top .edge-surface-flare,
 .edge-surface--bottom .edge-surface-flare {
 	width: 14px;
 	height: 13px;
 	clip-path: shape(
 		from 0 0,
-		curve to 13px 13px with 10px 0 / 13px 3px,
+		arc to 13px 13px of 13px 13px cw small,
 		line to 14px 13px,
 		line to 14px 0,
 		close
 	);
 }
 
-/* Drawn as the left edge's top flare. */
+/* Drawn as the left edge's top flare: fillet centered at the box's top-right
+   corner. */
 .edge-surface--left .edge-surface-flare,
 .edge-surface--right .edge-surface-flare {
 	width: 13px;
 	height: 14px;
 	clip-path: shape(
 		from 0 0,
-		curve to 13px 13px with 0 10px / 3px 13px,
+		arc to 13px 13px of 13px 13px ccw small,
 		line to 13px 14px,
 		line to 0 14px,
 		close

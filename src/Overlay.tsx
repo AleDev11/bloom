@@ -4,12 +4,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsSync } from "./hooks/useSettingsSync";
+import { useGlass, useGlassEnabled } from "./hooks/useGlass";
 import { useTrailingThrottle } from "./hooks/useTrailingThrottle";
 import { getVersion } from "@tauri-apps/api/app";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { MixerIcon, SpeakerIcon } from "./icons";
 import "./Overlay.css";
+import "./glass.css";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 
@@ -150,13 +152,15 @@ function VolumeNotch({
 	isMuted,
 	onVolumeChange,
 	mixerExpanded,
-	onMixerExpandedChange
+	onMixerExpandedChange,
+	pillRef
 }: {
 	volume: number;
 	isMuted: boolean;
 	onVolumeChange: (vol: number) => void;
 	mixerExpanded: boolean;
 	onMixerExpandedChange: (expanded: boolean) => void;
+	pillRef?: React.RefObject<HTMLDivElement | null>;
 }) {
 	const percentage = Math.round(volume * 100);
 	const barRef = useRef<HTMLDivElement>(null);
@@ -372,7 +376,10 @@ function VolumeNotch({
 		>
 			<EdgeSurface edge="left" />
 			<motion.div
-				ref={shellRef}
+				ref={(el) => {
+					shellRef.current = el;
+					if (pillRef) pillRef.current = el;
+				}}
 				className="volume-notch"
 				animate={{ width: mixerExpanded ? 42 + mixerPanelWidth : 42 }}
 				transition={{ type: "spring", bounce: 0, duration: 0.35 }}
@@ -489,10 +496,12 @@ const SunIcon = ({ brightness }: { brightness: number }) => (
 
 function BrightnessNotch({
 	brightness,
-	onBrightnessChange
+	onBrightnessChange,
+	pillRef
 }: {
 	brightness: number;
 	onBrightnessChange: (val: number) => void;
+	pillRef?: React.RefObject<HTMLDivElement | null>;
 }) {
 	const barRef = useRef<HTMLDivElement>(null);
 
@@ -538,7 +547,7 @@ function BrightnessNotch({
 			}}
 			transition={{ type: "spring", stiffness: 450, damping: 25, mass: 0.7 }}
 		>
-			<div className="brightness-notch">
+			<div className="brightness-notch" ref={pillRef}>
 				<EdgeSurface edge="right" />
 				<motion.div
 					className="brightness-notch-content-group"
@@ -610,6 +619,18 @@ function OverlayApp() {
 	const hideWindowTimeoutRef = useRef<any>(null);
 	const splashActiveRef = useRef(false);
 	const mixerExpandedRef = useRef(false);
+
+	// Real frosted glass under the volume and brightness notches (see glass.rs).
+	const glassEnabled = useGlassEnabled();
+	const volumePillRef = useRef<HTMLDivElement>(null);
+	const brightnessPillRef = useRef<HTMLDivElement>(null);
+	useGlass(
+		() => [
+			{ pill: volumePillRef.current, edge: "left", flares: true },
+			{ pill: brightnessPillRef.current, edge: "right", flares: true }
+		],
+		glassEnabled
+	);
 
 	const resetHideTimeout = useCallback(() => {
 		// Keep the notch pinned while the mixer panel is open; it closes on
@@ -981,6 +1002,7 @@ function OverlayApp() {
 								onVolumeChange={handleVolumeChange}
 								mixerExpanded={mixerExpanded}
 								onMixerExpandedChange={handleMixerExpandedChange}
+								pillRef={volumePillRef}
 								key="volume-island"
 							/>
 						)}
@@ -988,6 +1010,7 @@ function OverlayApp() {
 							<BrightnessNotch
 								brightness={brightness}
 								onBrightnessChange={handleBrightnessChange}
+								pillRef={brightnessPillRef}
 								key="brightness-island"
 							/>
 						)}
