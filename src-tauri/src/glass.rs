@@ -123,6 +123,17 @@ struct Backdrop {
 // not `Send`).
 static BACKDROPS: Mutex<Option<HashMap<String, Backdrop>>> = Mutex::new(None);
 
+/// One line per unique message, so a 60fps shape stream does not flood the
+/// terminal while the interesting states still show up once each.
+fn diag(message: String) {
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    if SEEN.get_or_init(Default::default).lock().unwrap().insert(message.clone()) {
+        eprintln!("[glass] {message}");
+    }
+}
+
 unsafe extern "system" fn backdrop_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
 }
@@ -208,6 +219,7 @@ fn create_backdrop() -> Option<Backdrop> {
             None,
         )
         .ok()?;
+        diag("backdrop window created".into());
 
         let no_round = DWMWCP_DONOTROUND; // the shape comes from the visual tree
         let _ = DwmSetWindowAttribute(
@@ -226,15 +238,44 @@ fn create_backdrop() -> Option<Backdrop> {
         enable_host_backdrop(hwnd);
 
         let _ = RoInitialize(RO_INIT_MULTITHREADED);
-        let compositor = Compositor::new().ok()?;
-        let interop = compositor.cast::<ICompositorDesktopInterop>().ok()?;
-        let target = interop.CreateDesktopWindowTarget(hwnd, true).ok()?;
+        let compositor = match Compositor::new() {
+            Ok(c) => c,
+            Err(e) => {
+                diag(format!("Compositor::new failed: {e:?}"));
+                return None;
+            }
+        };
+        let interop = match compositor.cast::<ICompositorDesktopInterop>() {
+            Ok(i) => i,
+            Err(e) => {
+                diag(format!("ICompositorDesktopInterop cast failed: {e:?}"));
+                return None;
+            }
+        };
+        let target = match interop.CreateDesktopWindowTarget(hwnd, true) {
+            Ok(t) => t,
+            Err(e) => {
+                diag(format!("CreateDesktopWindowTarget failed: {e:?}"));
+                return None;
+            }
+        };
+        diag("desktop window target ok".into());
         let root = compositor.CreateContainerVisual().ok()?;
         target.SetRoot(&root).ok()?;
-        let backdrop_brush: CompositionBrush =
-            compositor.CreateHostBackdropBrush().ok()?.cast().ok()?;
+        let backdrop_brush: CompositionBrush = match compositor
+            .CreateHostBackdropBrush()
+            .and_then(|b| b.cast())
+        {
+            Ok(b) => b,
+            Err(e) => {
+                diag(format!("CreateHostBackdropBrush failed: {e:?}"));
+                return None;
+            }
+        };
+        diag("host backdrop brush ok".into());
         let factory: ID2D1Factory =
             D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, None).ok()?;
+        diag("d2d factory ok".into());
 
         Some(Backdrop {
             hwnd: hwnd.0 as isize,
@@ -362,7 +403,15 @@ fn build_path(factory: &ID2D1Factory, piece: &GlassPiece) -> Option<ID2D1Geometr
 /// and the page keeps its plain look.
 #[tauri::command]
 pub fn set_glass(window: WebviewWindow, pieces: Vec<Option<GlassPiece>>) -> bool {
-    if !blur_available() {
+    let live = blur_available();
+    diag(format!(
+        "set_glass {} live={} shown={}/{}",
+        window.label(),
+        live,
+        pieces.iter().filter(|p| p.is_some()).count(),
+        pieces.len()
+    ));
+    if !live {
         park_all(window.label());
         return false;
     }
@@ -415,6 +464,7 @@ pub fn set_glass(window: WebviewWindow, pieces: Vec<Option<GlassPiece>>) -> bool
 
     while backdrop.pieces.len() < pieces.len() {
         let Some(piece) = create_piece(backdrop) else {
+            diag("create_piece failed".into());
             return false;
         };
         backdrop.pieces.push(piece);
@@ -426,15 +476,19 @@ pub fn set_glass(window: WebviewWindow, pieces: Vec<Option<GlassPiece>>) -> bool
             continue;
         };
         let Some(path_geometry) = build_path(&backdrop.factory, piece) else {
+            diag("build_path failed".into());
             piece_visual.visual.SetIsVisible(false).ok();
             continue;
         };
         let source = GeometrySource::create(path_geometry);
         let Ok(path) = CompositionPath::Create(&source) else {
+            diag("CompositionPath::Create rejected the geometry source".into());
             piece_visual.visual.SetIsVisible(false).ok();
             continue;
         };
-        piece_visual.path_geometry.SetPath(&path).ok();
+        if let Err(e) = piece_visual.path_geometry.SetPath(&path) {
+            diag(format!("SetPath failed: {e:?}"));
+        }
         let _ = piece_visual.visual.SetOffset(Vector3 {
             X: piece.x as f32,
             Y: piece.y as f32,
@@ -498,6 +552,7 @@ fn blur_available() -> bool {
         );
         let mut power = SYSTEM_POWER_STATUS::default();
         let saver = GetSystemPowerStatus(&mut power).is_ok() && power.SystemStatusFlag == 1;
+        diag(format!("blur_available: transparency={transparency} saver={saver}"));
         transparency != 0 && !saver
     }
 }
