@@ -23,6 +23,35 @@ interface AudioSession {
 	is_muted: boolean;
 }
 
+// Sliders can unmount or lose focus while a drag is in progress. Always drop
+// their document listeners so an old slider cannot keep sending changes.
+function useMouseSliderDrag(onMove: (clientY: number) => void, onEnd?: () => void) {
+	const moveRef = useRef(onMove);
+	const endRef = useRef(onEnd);
+	const cleanupRef = useRef<(() => void) | null>(null);
+	moveRef.current = onMove;
+	endRef.current = onEnd;
+
+	useEffect(() => () => cleanupRef.current?.(), []);
+
+	return (clientY: number) => {
+		cleanupRef.current?.();
+		moveRef.current(clientY);
+		const handleMove = (event: MouseEvent) => moveRef.current(event.clientY);
+		const cleanup = () => {
+			document.removeEventListener("mousemove", handleMove);
+			document.removeEventListener("mouseup", cleanup);
+			window.removeEventListener("blur", cleanup);
+			cleanupRef.current = null;
+			endRef.current?.();
+		};
+		cleanupRef.current = cleanup;
+		document.addEventListener("mousemove", handleMove);
+		document.addEventListener("mouseup", cleanup);
+		window.addEventListener("blur", cleanup);
+	};
+}
+
 function MixerTile({
 	session,
 	onVolumeChange,
@@ -79,18 +108,13 @@ function MixerTile({
 		const relativeY = rect.bottom - clientY;
 		onVolumeChange(session.pid, Math.max(0, Math.min(1, relativeY / rect.height)));
 	};
+	const startDrag = useMouseSliderDrag(volumeFromY, () => {
+		draggingRef.current = null;
+	});
 
 	const handleMouseDown = (e: React.MouseEvent) => {
+		startDrag(e.clientY);
 		draggingRef.current = session.pid;
-		volumeFromY(e.clientY);
-		const handleMouseMove = (moveE: MouseEvent) => volumeFromY(moveE.clientY);
-		const handleMouseUp = () => {
-			draggingRef.current = null;
-			document.removeEventListener("mousemove", handleMouseMove);
-			document.removeEventListener("mouseup", handleMouseUp);
-		};
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
 	};
 
 	return (
@@ -325,21 +349,15 @@ function VolumeNotch({
 		onVolumeChange(newVolume);
 	};
 
-	const handleMouseDown = (e: React.MouseEvent) => {
-		handleBarInteraction(e);
-		const handleMouseMove = (moveE: MouseEvent) => {
+	const startDrag = useMouseSliderDrag((clientY) => {
 			if (!barRef.current) return;
 			const rect = barRef.current.getBoundingClientRect();
-			const relativeY = rect.bottom - moveE.clientY;
+			const relativeY = rect.bottom - clientY;
 			const newVolume = Math.max(0, Math.min(1, relativeY / rect.height));
 			onVolumeChange(newVolume);
-		};
-		const handleMouseUp = () => {
-			document.removeEventListener("mousemove", handleMouseMove);
-			document.removeEventListener("mouseup", handleMouseUp);
-		};
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
+	});
+	const handleMouseDown = (e: React.MouseEvent) => {
+		startDrag(e.clientY);
 	};
 
 	return (
@@ -505,21 +523,15 @@ function BrightnessNotch({
 		onBrightnessChange(newBrightness);
 	};
 
-	const handleMouseDown = (e: React.MouseEvent) => {
-		handleBarInteraction(e);
-		const handleMouseMove = (moveE: MouseEvent) => {
+	const startDrag = useMouseSliderDrag((clientY) => {
 			if (!barRef.current) return;
 			const rect = barRef.current.getBoundingClientRect();
-			const relativeY = rect.bottom - moveE.clientY;
+			const relativeY = rect.bottom - clientY;
 			const newBrightness = Math.max(0, Math.min(100, (relativeY / rect.height) * 100));
 			onBrightnessChange(newBrightness);
-		};
-		const handleMouseUp = () => {
-			document.removeEventListener("mousemove", handleMouseMove);
-			document.removeEventListener("mouseup", handleMouseUp);
-		};
-		document.addEventListener("mousemove", handleMouseMove);
-		document.addEventListener("mouseup", handleMouseUp);
+	});
+	const handleMouseDown = (e: React.MouseEvent) => {
+		startDrag(e.clientY);
 	};
 
 	return (

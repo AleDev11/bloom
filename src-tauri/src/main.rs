@@ -402,12 +402,7 @@ fn main() {
                     .on_menu_event(move |_, event| match event.id().as_ref() {
                         "quit" => {
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
-                            if let Some(w) = ah.get_webview_window("main") {
-                                unregister_appbar_native(w.hwnd().unwrap());
-                            }
-                            if let Some(w) = ah.get_webview_window("dock") {
-                                unregister_appbar_native(w.hwnd().unwrap());
-                            }
+                            crate::commands::release_appbars(&ah);
                             set_taskbar_visibility(true, true);
                             NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
                             set_native_osd_suppressed(false);
@@ -416,12 +411,7 @@ fn main() {
                         }
                         "restart" => {
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
-                            if let Some(w) = ah.get_webview_window("main") {
-                                unregister_appbar_native(w.hwnd().unwrap());
-                            }
-                            if let Some(w) = ah.get_webview_window("dock") {
-                                unregister_appbar_native(w.hwnd().unwrap());
-                            }
+                            crate::commands::release_appbars(&ah);
                             if let Some(w) = ah.get_webview_window("settings") {
                                 let _ = w.destroy();
                             }

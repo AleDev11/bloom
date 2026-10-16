@@ -324,42 +324,57 @@ unsafe extern "system" fn window_change_event_proc(
         return;
     }
 
+    // WinEvent reports child controls under a valid parent HWND too. Their
+    // create/show/hide activity is not an app-window change and can otherwise
+    // queue hundreds of dock rescans during slider interaction.
+    if id_object != 0 || id_child != 0 {
+        return;
+    }
+
     // A top-level window appeared/disappeared (or focus moved): capture UI
     // state may have changed. Cheap flag; the worker thread does the scan.
     {
         use windows::Win32::UI::WindowsAndMessaging::{
             EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_SHOW,
         };
-        if id_object == 0
-            && id_child == 0
-            && (event == EVENT_OBJECT_SHOW
-                || event == EVENT_OBJECT_HIDE
-                || event == EVENT_OBJECT_DESTROY)
+        if event == EVENT_OBJECT_SHOW || event == EVENT_OBJECT_HIDE || event == EVENT_OBJECT_DESTROY
         {
             CAPTURE_RECHECK.store(true, Ordering::Relaxed);
         }
     }
 
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongW, GetWindowThreadProcessId, IsWindow, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+        GetClassNameA, GetWindowLongW, GetWindowThreadProcessId, IsWindow, GWL_EXSTYLE,
+        WS_EX_TOOLWINDOW,
     };
 
     if !IsWindow(Some(hwnd)).as_bool() {
-        return;
-    }
+        // A destroyed window is no longer queryable, but the dock still needs
+        // to remove its app. Other notifications with an invalid HWND are stale.
+        if event != windows::Win32::UI::WindowsAndMessaging::EVENT_OBJECT_DESTROY {
+            return;
+        }
+    } else {
+        // Windows recreates its native volume/brightness flyout during slider
+        // changes. It is not a taskbar app.
+        let mut class_name = [0u8; 256];
+        let len = GetClassNameA(hwnd, &mut class_name);
+        if &class_name[..len as usize] == b"NativeHWNDHost"
+            || &class_name[..len as usize] == b"#32768"
+        {
+            return;
+        }
 
-    // Skip tool windows (docks, trays, etc.)
-    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-    if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
-        return;
-    }
-
-    // Skip our own process
-    let my_pid = std::process::id();
-    let mut pid = 0u32;
-    GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == my_pid {
-        return;
+        // Skip tool windows (docks, trays, etc.) and our own process.
+        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
+            return;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == std::process::id() {
+            return;
+        }
     }
 
     // Debounce bursts: closing a window (especially a UWP app) emits several
@@ -1312,8 +1327,8 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
         use windows::Win32::Foundation::{POINT, RECT};
         use windows::Win32::Graphics::Gdi::ClientToScreen;
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetClientRect, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic, IsZoomed,
-            GWL_STYLE, WS_CAPTION, WS_MAXIMIZE,
+            GetClientRect, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic, IsWindow,
+            IsZoomed, GWL_STYLE, WS_CAPTION, WS_MAXIMIZE,
         };
         let mut last_visible = true;
         let mut last_dock_overlap: Option<bool> = None;
@@ -1348,6 +1363,36 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 };
                 let mut hwnd = GetForegroundWindow();
 
+                // Bloom's HUD and menus can briefly become the foreground
+                // window while the user drags a control or right-clicks the
+                // dock. Walking the Z-order from that window may select a
+                // different app on every tick, making the smart dock flash.
+                // Keep evaluating the last real foreground window until an
+                // external app actually takes focus. Native popup menus use
+                // the #32768 class and need the same treatment.
+                let mut foreground_pid = 0u32;
+                if !hwnd.is_invalid() {
+                    GetWindowThreadProcessId(hwnd, Some(&mut foreground_pid));
+                }
+                let mut foreground_class = [0u8; 256];
+                let foreground_class_len = if hwnd.is_invalid() {
+                    0
+                } else {
+                    windows::Win32::UI::WindowsAndMessaging::GetClassNameA(
+                        hwnd,
+                        &mut foreground_class,
+                    )
+                };
+                let is_popup_menu = &foreground_class[..foreground_class_len as usize] == b"#32768";
+                if (foreground_pid == my_process_id || is_popup_menu)
+                    && !last_hwnd.is_invalid()
+                    && IsWindow(Some(last_hwnd)).as_bool()
+                    && IsWindowVisible(last_hwnd).as_bool()
+                    && !IsIconic(last_hwnd).as_bool()
+                {
+                    hwnd = last_hwnd;
+                }
+
                 // Find the first meaningful window for overlap detection.
                 // We skip Bloom windows, invisible windows, minimized windows, and 'cloaked' system ghosts.
                 let mut check_count = 0;
@@ -1363,6 +1408,7 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                     let class_str = std::str::from_utf8(&class_name[..len as usize]).unwrap_or("");
 
                     let is_bloom = process_id == my_process_id || class_str.contains("Bloom");
+                    let is_popup_menu = class_str == "#32768";
                     let is_visible = IsWindowVisible(hwnd).as_bool();
                     let is_iconic = IsIconic(hwnd).as_bool();
 
@@ -1381,7 +1427,13 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         && (rect.right - rect.left) > 0
                         && (rect.bottom - rect.top) > 0;
 
-                    if is_bloom || !is_visible || is_iconic || is_cloaked || !has_valid_rect {
+                    if is_bloom
+                        || is_popup_menu
+                        || !is_visible
+                        || is_iconic
+                        || is_cloaked
+                        || !has_valid_rect
+                    {
                         hwnd = windows::Win32::UI::WindowsAndMessaging::GetWindow(
                             hwnd,
                             windows::Win32::UI::WindowsAndMessaging::GW_HWNDNEXT,

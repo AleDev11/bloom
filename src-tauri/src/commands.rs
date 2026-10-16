@@ -1778,10 +1778,16 @@ pub fn save_pinned_apps(app: AppHandle, apps: Vec<AppInfo>) -> Result<(), String
         .map_err(|e| e.to_string())?
         .join("pinned_apps.json");
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let _guard = PINNED_FILE_LOCK.lock().map_err(|e| e.to_string())?;
+    if path.exists() {
+        let old = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<Vec<AppInfo>>(&old)
+            .map_err(|e| format!("Pinned apps file is invalid; refusing to overwrite it: {e}"))?;
     }
     let content = serde_json::to_string(&apps).map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| e.to_string())?;
+    crate::utils::atomic_write_file(&path, content.as_bytes())?;
     Ok(())
 }
 
@@ -2045,10 +2051,14 @@ pub async fn get_installed_apps() -> Vec<AppInfo> {
 #[tauri::command]
 pub fn hide_native_osd() {
     unsafe {
-        use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, ShowWindow, SW_HIDE};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            FindWindowA, IsWindowVisible, ShowWindow, SW_HIDE,
+        };
         let class1 = windows::core::PCSTR(c"NativeHWNDHost".as_ptr() as *const u8);
         if let Ok(hwnd) = FindWindowA(class1, windows::core::PCSTR::null()) {
-            let _ = ShowWindow(hwnd, SW_HIDE);
+            if IsWindowVisible(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            }
         }
     }
 }
@@ -2927,12 +2937,7 @@ pub async fn quit_bloom(handle: AppHandle) {
 #[tauri::command]
 pub async fn restart_bloom(handle: AppHandle) {
     SHUTTING_DOWN.store(true, Ordering::Relaxed);
-    if let Some(w) = handle.get_webview_window("main") {
-        unregister_appbar_native(w.hwnd().unwrap());
-    }
-    if let Some(w) = handle.get_webview_window("dock") {
-        unregister_appbar_native(w.hwnd().unwrap());
-    }
+    release_appbars(&handle);
     if let Some(w) = handle.get_webview_window("settings") {
         let _ = w.destroy();
     }
@@ -2982,19 +2987,9 @@ pub fn save_setting(app: AppHandle, key: String, value: serde_json::Value) -> Re
         .map_err(|e| e.to_string())?
         .join("settings.json");
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let mut settings = HashMap::new();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(existing) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&content) {
-            settings = existing;
-        }
-    }
-    settings.insert(key.clone(), value);
-    let content = serde_json::to_string(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| e.to_string())?;
-
-    crate::utils::replace_settings_cache(settings.clone());
+    let settings = crate::utils::save_setting_file(&path, key.clone(), value)?;
 
     // Broadcast so all windows sync — emit the key as-is (bloom-prefixed)
     let _ = app.emit(
@@ -3014,25 +3009,17 @@ pub fn load_settings(app: AppHandle) -> Result<HashMap<String, serde_json::Value
         Ok(p) => p.join("settings.json"),
         Err(_) => return Ok(HashMap::new()),
     };
-    if let Ok(content) = std::fs::read_to_string(path) {
-        if let Ok(settings) = serde_json::from_str(&content) {
-            return Ok(settings);
-        }
-    }
-    Ok(HashMap::new())
+    crate::utils::read_settings_file(&path)
 }
 
 /// Whether settings.json exists and parses, which load_settings can't tell
 /// apart from a missing file since both load as an empty map.
 #[tauri::command]
 pub fn settings_file_readable(app: AppHandle) -> bool {
-    app.path()
-        .app_config_dir()
-        .ok()
-        .and_then(|dir| std::fs::read_to_string(dir.join("settings.json")).ok())
-        .is_some_and(|content| {
-            serde_json::from_str::<HashMap<String, serde_json::Value>>(&content).is_ok()
-        })
+    app.path().app_config_dir().ok().is_some_and(|dir| {
+        let path = dir.join("settings.json");
+        path.exists() && crate::utils::read_settings_file(&path).is_ok()
+    })
 }
 
 #[tauri::command]
@@ -3570,8 +3557,7 @@ pub fn export_settings(app: AppHandle) -> Result<String, String> {
         .join("settings.json");
     if let Ok(content) = std::fs::read_to_string(&path) {
         // Validate it's valid JSON before returning
-        let _settings: HashMap<String, serde_json::Value> =
-            serde_json::from_str(&content).map_err(|e| format!("Invalid settings file: {}", e))?;
+        let _settings = crate::utils::read_settings_file(&path)?;
         Ok(content)
     } else {
         Err("No settings file found".into())
@@ -3591,7 +3577,8 @@ pub fn write_settings_to_path(path: String, content: String) -> Result<(), Strin
 #[tauri::command]
 pub fn import_settings(app: AppHandle, settings: String) -> Result<(), String> {
     let imported: HashMap<String, serde_json::Value> =
-        serde_json::from_str(&settings).map_err(|e| format!("Invalid JSON: {}", e))?;
+        serde_json::from_str(settings.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Invalid JSON: {}", e))?;
 
     let path = app
         .path()
@@ -3599,17 +3586,13 @@ pub fn import_settings(app: AppHandle, settings: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .join("settings.json");
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let previous: HashMap<String, serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default();
-
-    let content = serde_json::to_string_pretty(&imported).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-
+    let _guard = SETTINGS_FILE_LOCK.lock().map_err(|e| e.to_string())?;
+    let previous = crate::utils::read_settings_file(&path)?;
+    crate::utils::write_settings_file(&path, &imported)?;
     crate::utils::replace_settings_cache(imported.clone());
+    drop(_guard);
 
     // Broadcast changes for every imported key so all windows re-sync
     for (key, value) in &imported {
@@ -3647,7 +3630,7 @@ pub fn reset_settings(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .join("settings.json");
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
     // Keep non-Bloom keys (the file is user-editable) and the first-run/version
@@ -3655,10 +3638,8 @@ pub fn reset_settings(app: AppHandle) -> Result<(), String> {
     // replaying the splash after a reset). Everything else falls back to
     // defaults in both the backend and the frontends.
     let keep = ["bloom-first-run", "bloom-app-version"];
-    let mut settings: HashMap<String, serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default();
+    let _guard = SETTINGS_FILE_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut settings = crate::utils::read_settings_file(&path)?;
     let removed: Vec<String> = settings
         .keys()
         .filter(|key| key.starts_with("bloom-") && !keep.contains(&key.as_str()))
@@ -3668,9 +3649,9 @@ pub fn reset_settings(app: AppHandle) -> Result<(), String> {
         settings.remove(key);
     }
 
-    let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    crate::utils::write_settings_file(&path, &settings)?;
     crate::utils::replace_settings_cache(settings);
+    drop(_guard);
 
     // Mirror the external-edit watcher so every open window drops the removed
     // keys from localStorage. The caller restarts Bloom right after, but this
@@ -3700,7 +3681,7 @@ pub fn setup_settings_watcher(app: AppHandle) {
         use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
         use windows::Win32::Storage::FileSystem::{
             CreateFileW, ReadDirectoryChangesW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
-            FILE_NOTIFY_CHANGE_LAST_WRITE, OPEN_EXISTING,
+            FILE_NOTIFY_CHANGE_FILE_NAME, FILE_NOTIFY_CHANGE_LAST_WRITE, OPEN_EXISTING,
         };
         use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
         use windows::Win32::System::IO::OVERLAPPED;
@@ -3746,7 +3727,7 @@ pub fn setup_settings_watcher(app: AppHandle) {
                     notify_buffer.as_mut_ptr() as *mut _,
                     notify_buffer.len() as u32,
                     false,
-                    FILE_NOTIFY_CHANGE_LAST_WRITE,
+                    FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME,
                     Some(&mut bytes_returned),
                     Some(&mut overlapped),
                     None,
@@ -3760,12 +3741,16 @@ pub fn setup_settings_watcher(app: AppHandle) {
 
                 std::thread::sleep(std::time::Duration::from_millis(200));
 
-                if let Ok(new_content) = std::fs::read_to_string(&settings_path) {
-                    if let Ok(new_settings) =
-                        serde_json::from_str::<HashMap<String, serde_json::Value>>(&new_content)
-                    {
-                        // Collect diffs while holding the lock, then drop before emitting
-                        let (changed, removed) = {
+                // Keep the file read and cache comparison in the same
+                // transaction as writes from the four webviews. Otherwise a
+                // delayed watcher read can roll the cache back after a save.
+                let changes = {
+                    let Ok(_file_guard) = SETTINGS_FILE_LOCK.lock() else {
+                        continue;
+                    };
+                    crate::utils::read_settings_file(&settings_path)
+                        .ok()
+                        .map(|new_settings| {
                             let mut cache = crate::state::SETTINGS_CACHE
                                 .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
                                 .lock()
@@ -3786,20 +3771,21 @@ pub fn setup_settings_watcher(app: AppHandle) {
 
                             *cache = new_settings.clone();
                             (changed, removed)
-                        };
-                        // Lock dropped — safe to emit without blocking save_setting
-                        for (key, value) in &changed {
-                            let _ = app.emit(
-                                "settings-external-changed",
-                                serde_json::json!({ "key": key, "value": value }),
-                            );
-                        }
-                        for key in removed {
-                            let _ = app.emit(
-                                "settings-external-changed",
-                                serde_json::json!({ "key": key, "value": null }),
-                            );
-                        }
+                        })
+                };
+                if let Some((changed, removed)) = changes {
+                    // Both file and cache locks are released before emitting.
+                    for (key, value) in &changed {
+                        let _ = app.emit(
+                            "settings-external-changed",
+                            serde_json::json!({ "key": key, "value": value }),
+                        );
+                    }
+                    for key in removed {
+                        let _ = app.emit(
+                            "settings-external-changed",
+                            serde_json::json!({ "key": key, "value": null }),
+                        );
                     }
                 }
             }

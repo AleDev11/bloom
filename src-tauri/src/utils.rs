@@ -1027,6 +1027,69 @@ pub fn get_now_ms() -> i64 {
         .as_millis() as i64
 }
 
+/// Parse the editable settings file without discarding a UTF-8 BOM. A parse
+/// failure must reach the caller rather than turning into an empty map: the
+/// next save would otherwise overwrite all of the user's preferences.
+pub fn read_settings_file(
+    path: &std::path::Path,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(content.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Invalid settings file: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+        Err(e) => Err(format!("Could not read settings file: {e}")),
+    }
+}
+
+/// Write a complete file in the same directory and replace the old file only
+/// after the new contents are ready. A crash or write failure leaves the old file.
+pub fn atomic_write_file(path: &std::path::Path, content: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let temp = path.with_file_name(format!(
+        "{}.tmp-{}-{}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("bloom"),
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    if let Err(e) = std::fs::write(&temp, content) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("Could not write {}: {e}", temp.display()));
+    }
+    if let Err(e) = std::fs::rename(&temp, path) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(format!("Could not replace {}: {e}", path.display()));
+    }
+    Ok(())
+}
+
+pub fn write_settings_file(
+    path: &std::path::Path,
+    settings: &std::collections::HashMap<String, serde_json::Value>,
+) -> Result<(), String> {
+    let content = serde_json::to_vec(settings).map_err(|e| e.to_string())?;
+    atomic_write_file(path, &content)
+}
+
+/// The four webviews may save at once. Keep each read/modify/write transaction
+/// together so one window cannot replace another window's new setting.
+pub fn save_setting_file(
+    path: &std::path::Path,
+    key: String,
+    value: serde_json::Value,
+) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
+    let _guard = crate::state::SETTINGS_FILE_LOCK
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let mut settings = read_settings_file(path)?;
+    settings.insert(key, value);
+    write_settings_file(path, &settings)?;
+    replace_settings_cache(settings.clone());
+    Ok(settings)
+}
+
 /// Load settings.json into the in-memory cache. Call once at startup.
 pub fn init_settings_cache(app: &tauri::AppHandle) {
     use crate::state::SETTINGS_CACHE;
@@ -1039,14 +1102,9 @@ pub fn init_settings_cache(app: &tauri::AppHandle) {
         .ok()
         .map(|p| p.join("settings.json"))
     {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(settings) = serde_json::from_str::<
-                std::collections::HashMap<String, serde_json::Value>,
-            >(&content)
-            {
-                if let Ok(mut cache) = cache.lock() {
-                    *cache = settings;
-                }
+        if let Ok(settings) = read_settings_file(&path) {
+            if let Ok(mut cache) = cache.lock() {
+                *cache = settings;
             }
         }
     }
@@ -1275,6 +1333,63 @@ mod tests {
         parse_marker_secondaries, parse_marker_state,
     };
     use std::collections::HashMap;
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn test_settings_path() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "bloom-settings-test-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&dir).expect("create test directory");
+        dir.join("settings.json")
+    }
+
+    #[test]
+    fn settings_bom_is_read_and_a_damaged_file_is_never_overwritten() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let path = test_settings_path();
+        std::fs::write(&path, "\u{feff}{\"bloom-existing\":\"true\"}").unwrap();
+        let settings = super::read_settings_file(&path).unwrap();
+        assert_eq!(settings["bloom-existing"], "true");
+
+        super::save_setting_file(&path, "bloom-new".into(), "false".into()).unwrap();
+        let settings = super::read_settings_file(&path).unwrap();
+        assert_eq!(settings.len(), 2);
+
+        std::fs::write(&path, "{invalid").unwrap();
+        assert!(super::save_setting_file(&path, "bloom-another".into(), "true".into()).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{invalid");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn simultaneous_setting_saves_keep_every_key() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let path = test_settings_path();
+        let workers: Vec<_> = (0..12)
+            .map(|index| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    super::save_setting_file(
+                        &path,
+                        format!("bloom-key-{index}"),
+                        serde_json::json!(index.to_string()),
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(super::read_settings_file(&path).unwrap().len(), 12);
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
 
     #[test]
     fn taskbar_marker_round_trips_the_original_state() {
@@ -1381,6 +1496,7 @@ mod tests {
 
     #[test]
     fn replace_settings_cache_before_init_does_not_panic() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
         use super::replace_settings_cache;
         use crate::state::SETTINGS_CACHE;
 
