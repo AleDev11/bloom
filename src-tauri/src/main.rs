@@ -2,6 +2,7 @@
 
 mod bluetooth;
 mod commands;
+mod diagnostics;
 mod dock_extras;
 mod services;
 mod shelf;
@@ -95,6 +96,7 @@ fn main() {
         }
     }
 
+    diagnostics::initialize();
     setup_brightness_worker();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -351,6 +353,7 @@ fn main() {
             setup_taskbar_hook();
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
+            diagnostics::record("services_ready", "hooks and settings watcher initialized");
             wifi::setup_wifi_notifications(app.handle().clone());
             bluetooth::setup_bluetooth_notifications(app.handle().clone());
 
@@ -401,6 +404,7 @@ fn main() {
                     .menu(&menu)
                     .on_menu_event(move |_, event| match event.id().as_ref() {
                         "quit" => {
+                            diagnostics::record("shutdown", "source=tray");
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
                             crate::commands::release_appbars(&ah);
                             set_taskbar_visibility(true, true);
@@ -410,6 +414,7 @@ fn main() {
                             ah.exit(0);
                         }
                         "restart" => {
+                            diagnostics::record("restart", "source=tray");
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
                             crate::commands::release_appbars(&ah);
                             if let Some(w) = ah.get_webview_window("settings") {
@@ -445,6 +450,7 @@ fn main() {
         .expect("error while building tauri application");
     app.run(|_, event| {
         if let tauri::RunEvent::Exit = event {
+            diagnostics::record("exit", "restoring native taskbar");
             set_taskbar_visibility(true, true);
             NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
             set_native_osd_suppressed(false);
