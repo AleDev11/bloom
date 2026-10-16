@@ -10,8 +10,8 @@ App Separator controls the thin theme-aware divider; it is on by default and
 appears only when an unpinned app is present.
 
 - Click a background app to invoke its notification icon's default action.
-- Right-click a background app to request its native tray context menu.
-- Shift-right-click opens Bloom's menu for pinning and icon customization.
+- Right-click a background app for Bloom's menu. Its "App tray menu" entry
+  opens the app's native tray context menu.
 - An app with several tray icons has a separate menu entry for each icon.
 - Start's context menu includes Task Manager, Disk Management, Device Manager,
   Computer Management and Windows settings shortcuts. The dock background menu
