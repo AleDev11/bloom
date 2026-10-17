@@ -511,9 +511,13 @@ function App() {
 	const [isCharging, setIsCharging] = useState(false);
 	// Fetched when the pointer reaches the battery widget, for its tooltip.
 	const [batteryDetails, setBatteryDetails] = useState<BatteryDetails | null>(null);
-	// The status widget whose tooltip is open, and the distance from that
-	// widget's bottom to just below the pill.
-	const [statusTooltip, setStatusTooltip] = useState<{ id: string; top: number } | null>(null);
+	// The status widget whose tooltip is open, the side of the pill it hangs
+	// from, and the distance from the widget to just past that edge.
+	const [statusTooltip, setStatusTooltip] = useState<{
+		id: string;
+		side: "below" | "left" | "right";
+		offset: number;
+	} | null>(null);
 	const statusTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Width the hovered status strip needs so neither side runs into the clock.
 	const [statusFitWidth, setStatusFitWidth] = useState(0);
@@ -2351,19 +2355,31 @@ function App() {
 	// The notch never takes focus, and native `title` tooltips only show for an
 	// active window, so the status widgets draw their own. A tooltip opens
 	// after a tooltip-like delay, by which time the battery details fetched on
-	// enter are in.
+	// enter are in. Under the status strip it hangs below the pill; once the
+	// notch is open the pill is the tall panel, so it sits beside the pill on
+	// the widget's side instead, level with the widget.
 	const showStatusTooltip = useCallback(
 		(id: string, widget: HTMLElement) => {
 			if (statusTooltipTimerRef.current) clearTimeout(statusTooltipTimerRef.current);
 			statusTooltipTimerRef.current = setTimeout(() => {
 				const pill = bloomRef.current?.getBoundingClientRect();
 				const own = widget.getBoundingClientRect();
-				// Client rects are zoomed by the notch scale; the offset is not.
-				const gap = pill ? (pill.bottom - own.bottom) / scale : 0;
-				setStatusTooltip({ id, top: Math.max(0, gap) + 8 });
+				// Client rects are zoomed by the notch scale; offsets are not.
+				if (!pill) {
+					setStatusTooltip({ id, side: "below", offset: 8 });
+				} else if (!isOpen) {
+					const gap = (pill.bottom - own.bottom) / scale;
+					setStatusTooltip({ id, side: "below", offset: Math.max(0, gap) + 8 });
+				} else if (own.left + own.width / 2 >= pill.left + pill.width / 2) {
+					const gap = (pill.right - own.right) / scale;
+					setStatusTooltip({ id, side: "right", offset: Math.max(0, gap) + 10 });
+				} else {
+					const gap = (own.left - pill.left) / scale;
+					setStatusTooltip({ id, side: "left", offset: Math.max(0, gap) + 10 });
+				}
 			}, 400);
 		},
-		[scale]
+		[scale, isOpen]
 	);
 
 	const hideStatusTooltip = useCallback(() => {
@@ -2372,10 +2388,11 @@ function App() {
 		setStatusTooltip(null);
 	}, []);
 
-	// Widgets unmount when the notch collapses, without a mouse leave.
+	// Widgets unmount when the notch collapses, without a mouse leave, and an
+	// open card is placed for the notch's shape when it opened.
 	useEffect(() => {
-		if (!isHovered) hideStatusTooltip();
-	}, [isHovered, hideStatusTooltip]);
+		hideStatusTooltip();
+	}, [isHovered, isOpen, hideStatusTooltip]);
 
 	// Both sides of the status strip get equal width around the centered
 	// clock, so the notch must fit the clock plus twice the wider side. Widget
@@ -2506,7 +2523,26 @@ function App() {
 		}
 	};
 
-	// A status widget with its tooltip card, which hangs below the pill.
+	// Where a status tooltip card sits and how it slides in, by placement.
+	const statusTooltipMotion = (side: "below" | "left" | "right", offset: number) => {
+		if (side === "below") {
+			return {
+				style: { top: `calc(100% + ${offset}px)`, left: "50%" },
+				hidden: { opacity: 0, x: "-50%", y: -4 },
+				shown: { opacity: 1, x: "-50%", y: 0 }
+			};
+		}
+		// Top-aligned with the widget rather than centered on it: the widgets
+		// sit near the top of the screen, which would cut a centered card off.
+		const nudge = side === "right" ? -4 : 4;
+		return {
+			style: { top: -8, [side === "right" ? "left" : "right"]: `calc(100% + ${offset}px)` },
+			hidden: { opacity: 0, x: nudge, y: 0 },
+			shown: { opacity: 1, x: 0, y: 0 }
+		};
+	};
+
+	// A status widget with its tooltip card, which hangs outside the pill.
 	const statusWidget = (
 		id: string,
 		tooltip: string,
@@ -2524,18 +2560,22 @@ function App() {
 		>
 			{content}
 			<AnimatePresence>
-				{statusTooltip?.id === id && (
-					<motion.div
-						className="status-tooltip"
-						style={{ top: `calc(100% + ${statusTooltip.top}px)` }}
-						initial={{ opacity: 0, y: -4, x: "-50%" }}
-						animate={{ opacity: 1, y: 0, x: "-50%" }}
-						exit={{ opacity: 0, y: -4, x: "-50%" }}
-						transition={{ duration: 0.15 }}
-					>
-						{tooltip}
-					</motion.div>
-				)}
+				{statusTooltip?.id === id &&
+					(() => {
+						const placed = statusTooltipMotion(statusTooltip.side, statusTooltip.offset);
+						return (
+							<motion.div
+								className="status-tooltip"
+								style={placed.style}
+								initial={placed.hidden}
+								animate={placed.shown}
+								exit={placed.hidden}
+								transition={{ duration: 0.15 }}
+							>
+								{tooltip}
+							</motion.div>
+						);
+					})()}
 			</AnimatePresence>
 		</div>
 	);

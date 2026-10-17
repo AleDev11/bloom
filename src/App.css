@@ -424,10 +424,10 @@ img {
 }
 
 /* Drawn by the notch because native tooltips never show for it (see
-   showStatusTooltip in App.tsx). Hangs below the pill, display-only. */
+   showStatusTooltip in App.tsx). Hangs outside the pill, display-only;
+   App.tsx places it below or beside the pill. */
 .status-tooltip {
 	position: absolute;
-	left: 50%;
 	z-index: 20;
 	pointer-events: none;
 	padding: 8px 11px;
