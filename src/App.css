@@ -422,6 +422,29 @@ img {
 	color: var(--bloom-text, rgba(255, 255, 255, 0.9));
 }
 
+.battery-feature {
+	position: relative;
+}
+
+/* Drawn by the notch because native tooltips never show for it (see
+   showBatteryTooltip in App.tsx). Hangs below the pill, display-only. */
+.status-tooltip {
+	position: absolute;
+	left: 50%;
+	z-index: 20;
+	pointer-events: none;
+	padding: 8px 11px;
+	border-radius: 11px;
+	background: var(--bloom-bg-expanded, rgba(20, 20, 20, 0.92));
+	color: var(--bloom-text, white);
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.5;
+	white-space: pre;
+	text-align: left;
+}
+
 .passive-feature .label {
 	font-size: 11px;
 	font-weight: 500;

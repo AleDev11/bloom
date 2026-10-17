@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getVersion } from "@tauri-apps/api/app";
 import type { UpdateCheckResult } from "./updater";
+import { batteryTooltip, type BatteryDetails } from "./batteryTooltip";
 import "./App.css";
 import { initTheme } from "./theme";
 import {
@@ -508,6 +509,12 @@ function App() {
 
 	const [batteryLevel, setBatteryLevel] = useState(100);
 	const [isCharging, setIsCharging] = useState(false);
+	// Fetched when the pointer reaches the battery widget, for its tooltip.
+	const [batteryDetails, setBatteryDetails] = useState<BatteryDetails | null>(null);
+	// Distance from the widget's bottom to just below the pill, or null while
+	// the tooltip is closed.
+	const [batteryTooltipTop, setBatteryTooltipTop] = useState<number | null>(null);
+	const batteryTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [showPowerPulse, setShowPowerPulse] = useState(false);
 	const [showLowBatteryPulse, setShowLowBatteryPulse] = useState(false);
 	const [lowBatteryThreshold, setLowBatteryThreshold] = useState(() =>
@@ -2335,6 +2342,38 @@ function App() {
 		}
 	}, [bluetoothEnabled]);
 
+	// The notch never takes focus, and native `title` tooltips only show for an
+	// active window, so the battery widget draws its own. It opens after a
+	// tooltip-like delay, by which time the details fetched on enter are in.
+	const showBatteryTooltip = useCallback(
+		(e: React.MouseEvent<HTMLElement>) => {
+			const widget = e.currentTarget;
+			invoke<BatteryDetails>("get_battery_details")
+				.then(setBatteryDetails)
+				.catch((err) => console.error("Failed to read battery details:", err));
+			if (batteryTooltipTimerRef.current) clearTimeout(batteryTooltipTimerRef.current);
+			batteryTooltipTimerRef.current = setTimeout(() => {
+				const pill = bloomRef.current?.getBoundingClientRect();
+				const own = widget.getBoundingClientRect();
+				// Client rects are zoomed by the notch scale; the offset is not.
+				const gap = pill ? (pill.bottom - own.bottom) / scale : 0;
+				setBatteryTooltipTop(Math.max(0, gap) + 8);
+			}, 400);
+		},
+		[scale]
+	);
+
+	const hideBatteryTooltip = useCallback(() => {
+		if (batteryTooltipTimerRef.current) clearTimeout(batteryTooltipTimerRef.current);
+		batteryTooltipTimerRef.current = null;
+		setBatteryTooltipTop(null);
+	}, []);
+
+	// The widget unmounts when the notch collapses, without a mouse leave.
+	useEffect(() => {
+		if (!isHovered) hideBatteryTooltip();
+	}, [isHovered, hideBatteryTooltip]);
+
 	// Battery Saver - opens settings (no public API to toggle without admin)
 	const openBatterySaverSettings = useCallback(async () => {
 		try {
@@ -2454,13 +2493,36 @@ function App() {
 				);
 			case "battery":
 				return (
-					<div className="passive-feature" key="battery">
+					<div
+						className="passive-feature battery-feature"
+						key="battery"
+						onMouseEnter={showBatteryTooltip}
+						onMouseLeave={hideBatteryTooltip}
+					>
 						<BatteryIcon
 							charging={isCharging}
 							level={batteryLevel}
 							threshold={lowBatteryThreshold}
 						/>
 						<span className="label">{batteryLevel}%</span>
+						<AnimatePresence>
+							{batteryTooltipTop !== null && (
+								<motion.div
+									className="status-tooltip"
+									style={{ top: `calc(100% + ${batteryTooltipTop}px)` }}
+									initial={{ opacity: 0, y: -4, x: "-50%" }}
+									animate={{ opacity: 1, y: 0, x: "-50%" }}
+									exit={{ opacity: 0, y: -4, x: "-50%" }}
+									transition={{ duration: 0.15 }}
+								>
+									{batteryTooltip(
+										batteryDetails,
+										{ level: batteryLevel, charging: isCharging },
+										batterySaverEnabled
+									)}
+								</motion.div>
+							)}
+						</AnimatePresence>
 					</div>
 				);
 			case "cpu":
