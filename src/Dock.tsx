@@ -9,7 +9,7 @@ import { useSettingsSync } from "./hooks/useSettingsSync";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 
 import { mergeTrayApps, selectDockTrayApps, type AppInfo, type TrayApp } from "./dockApps";
-import { removeCustomFolder, type DockExtra } from "./dockExtras";
+import { driveLetter, hideDrive, removeCustomFolder, type DockExtra } from "./dockExtras";
 
 // Host processes (Edge/Chrome/Brave/ApplicationFrameHost) run every PWA/UWP
 // window, so their window title must be part of their identity — otherwise two
@@ -456,6 +456,7 @@ const Dock = memo(function Dock() {
 		"bloom-dock-extras-position": setDockExtrasPosition,
 		"bloom-dock-extras-drives": () => setDockExtrasRevision((r) => r + 1),
 		"bloom-dock-extras-recycle-bin": () => setDockExtrasRevision((r) => r + 1),
+		"bloom-dock-extras-hidden-drives": () => setDockExtrasRevision((r) => r + 1),
 		"bloom-dock-extras-folders": () => setDockExtrasRevision((r) => r + 1),
 		"bloom-dock-extras-custom-folders": () => setDockExtrasRevision((r) => r + 1)
 	});
@@ -768,6 +769,18 @@ const Dock = memo(function Dock() {
 			key: "bloom-dock-extras-custom-folders",
 			value: next
 		}).catch(console.error);
+		closeMenu();
+	};
+
+	// Settings > Dock > Drives shows it again.
+	const hideDriveFromDock = (extra: DockExtra) => {
+		const letter = driveLetter(extra);
+		if (!letter) return;
+		const next = hideDrive(localStorage.getItem("bloom-dock-extras-hidden-drives"), letter);
+		localStorage.setItem("bloom-dock-extras-hidden-drives", next);
+		invoke("save_setting", { key: "bloom-dock-extras-hidden-drives", value: next }).catch(
+			showActionError
+		);
 		closeMenu();
 	};
 
@@ -1695,6 +1708,17 @@ const Dock = memo(function Dock() {
 								<div className="menu-item" onClick={() => ejectExtra(contextMenu.extra!)}>
 									Eject
 								</div>
+							)}
+							{contextMenu.extra.kind === "drive" && (
+								<>
+									<div className="menu-divider" />
+									<div
+										className="menu-item quit"
+										onClick={() => hideDriveFromDock(contextMenu.extra!)}
+									>
+										Remove from Dock
+									</div>
+								</>
 							)}
 							{contextMenu.extra.kind === "custom" && (
 								<>

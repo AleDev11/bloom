@@ -224,6 +224,8 @@ function SettingsApp() {
 							handleDockExtrasPositionChange={settings.handleDockExtrasPositionChange}
 							dockExtrasDrives={settings.dockExtrasDrives}
 							toggleDockExtrasDrives={settings.toggleDockExtrasDrives}
+							dockExtrasHiddenDrives={settings.dockExtrasHiddenDrives}
+							toggleDockExtrasDrive={settings.toggleDockExtrasDrive}
 							dockExtrasRecycleBin={settings.dockExtrasRecycleBin}
 							toggleDockExtrasRecycleBin={settings.toggleDockExtrasRecycleBin}
 							dockTaskView={settings.dockTaskView}
