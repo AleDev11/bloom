@@ -2388,9 +2388,11 @@ function App() {
 			if (statusFitWidth !== 0) setStatusFitWidth(0);
 			return;
 		}
+		// offsetWidth, not scrollWidth: an open tooltip card overflows its
+		// widget and must not widen the notch.
 		const side = Math.max(
-			leftWidgetsRef.current?.scrollWidth ?? 0,
-			rightWidgetsRef.current?.scrollWidth ?? 0
+			leftWidgetsRef.current?.offsetWidth ?? 0,
+			rightWidgetsRef.current?.offsetWidth ?? 0
 		);
 		const clock = timeCenterRef.current?.offsetWidth ?? 0;
 		// The pill's 12px padding on each side, and a 10px gap to the clock.
