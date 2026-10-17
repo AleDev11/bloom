@@ -416,18 +416,15 @@ img {
 }
 
 .passive-feature {
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 5px;
 	color: var(--bloom-text, rgba(255, 255, 255, 0.9));
 }
 
-.battery-feature {
-	position: relative;
-}
-
 /* Drawn by the notch because native tooltips never show for it (see
-   showBatteryTooltip in App.tsx). Hangs below the pill, display-only. */
+   showStatusTooltip in App.tsx). Hangs below the pill, display-only. */
 .status-tooltip {
 	position: absolute;
 	left: 50%;
