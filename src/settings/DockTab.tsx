@@ -30,6 +30,10 @@ import {
 	type DockExtra
 } from "../dockExtras";
 
+/** Where a setting row's label starts: the row icon's 28px plus its 12px margin.
+ * Content under a label (chips, lists) is indented by this to line up with it. */
+const ROW_CONTENT_INDENT = "40px";
+
 /** One chip per connected drive, plus hidden drives that aren't connected. */
 function DrivePicker({
 	hiddenDrives,
@@ -59,7 +63,7 @@ function DrivePicker({
 		.map((letter) => ({ letter, name: `${letter}: (not connected)` }));
 
 	return (
-		<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingLeft: "34px" }}>
+		<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingLeft: ROW_CONTENT_INDENT }}>
 			{[...drives, ...disconnected].map((drive) => (
 				<button
 					key={drive.letter}
@@ -318,6 +322,7 @@ export function DockTab({
 									icon={HardDrive}
 									label="Drives"
 									desc="Fixed, removable and connected network drives"
+									divider={!dockExtrasDrives}
 								>
 									<label className="toggle-switch">
 										<input
@@ -330,12 +335,15 @@ export function DockTab({
 								</SettingRow>
 
 								{dockExtrasDrives && (
-									<div className="setting-item" style={{ paddingTop: 0 }}>
-										<DrivePicker
-											hiddenDrives={dockExtrasHiddenDrives}
-											onToggle={toggleDockExtrasDrive}
-										/>
-									</div>
+									<>
+										<div className="setting-item" style={{ paddingTop: 0, paddingBottom: 12 }}>
+											<DrivePicker
+												hiddenDrives={dockExtrasHiddenDrives}
+												onToggle={toggleDockExtrasDrive}
+											/>
+										</div>
+										<div className="setting-divider" />
+									</>
 								)}
 
 								<SettingRow
@@ -357,9 +365,7 @@ export function DockTab({
 									className="setting-item"
 									style={{ flexDirection: "column", alignItems: "flex-start", gap: "10px" }}
 								>
-									<div
-										style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}
-									>
+									<div style={{ display: "flex", alignItems: "center", width: "100%" }}>
 										<div className="setting-icon-bg">
 											<FolderOpen size={14} strokeWidth={1.5} />
 										</div>
@@ -371,7 +377,12 @@ export function DockTab({
 										</div>
 									</div>
 									<div
-										style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingLeft: "34px" }}
+										style={{
+											display: "flex",
+											gap: "8px",
+											flexWrap: "wrap",
+											paddingLeft: ROW_CONTENT_INDENT
+										}}
 									>
 										{KNOWN_FOLDER_OPTIONS.map((folder) => {
 											const active = parseEnabledFolders(dockExtrasFolders).includes(folder.id);
@@ -388,14 +399,13 @@ export function DockTab({
 										})}
 									</div>
 								</div>
+								<div className="setting-divider" />
 
 								<div
 									className="setting-item"
 									style={{ flexDirection: "column", alignItems: "flex-start", gap: "10px" }}
 								>
-									<div
-										style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}
-									>
+									<div style={{ display: "flex", alignItems: "center", width: "100%" }}>
 										<div className="setting-icon-bg">
 											<FolderPlus size={14} strokeWidth={1.5} />
 										</div>
@@ -410,7 +420,7 @@ export function DockTab({
 											flexDirection: "column",
 											gap: "6px",
 											width: "100%",
-											paddingLeft: "34px",
+											paddingLeft: ROW_CONTENT_INDENT,
 											boxSizing: "border-box"
 										}}
 									>
@@ -446,7 +456,7 @@ export function DockTab({
 							className="setting-item"
 							style={{ flexDirection: "column", alignItems: "flex-start", gap: "10px" }}
 						>
-							<div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}>
+							<div style={{ display: "flex", alignItems: "center", width: "100%" }}>
 								<div className="setting-icon-bg">
 									<Sparkles size={14} strokeWidth={1.5} />
 								</div>
@@ -455,7 +465,14 @@ export function DockTab({
 									<span className="setting-desc">Choose the dock start button icon</span>
 								</div>
 							</div>
-							<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingLeft: "34px" }}>
+							<div
+								style={{
+									display: "flex",
+									gap: "8px",
+									flexWrap: "wrap",
+									paddingLeft: ROW_CONTENT_INDENT
+								}}
+							>
 								{START_ICON_PRESETS.map((icon) => (
 									<div
 										key={icon.key}
