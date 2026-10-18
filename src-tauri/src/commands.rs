@@ -590,7 +590,7 @@ fn send_key_tap(vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY, ho
 /// Depending on the Windows build it is hosted by StartMenuExperienceHost
 /// (older) or SearchHost (Windows 11 24H2+), so match both. The dock is
 /// WS_EX_NOACTIVATE, so clicking it never steals focus from an open menu.
-fn is_start_menu_open() -> bool {
+pub fn is_start_menu_open() -> bool {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
@@ -634,18 +634,26 @@ fn is_start_menu_open() -> bool {
 /// open animation. When the menu is open it is dismissed with Escape, which is
 /// deterministic. The tiny debounce only coalesces duplicate events; it must
 /// stay well below the double-click interval so a double-click still closes.
+///
+/// Start also closes itself on the press of a click outside it, the Start
+/// button included, so by the time the click arrives the menu is often gone.
+/// The mouse hook records whether Start was open at this click's press: if it
+/// was, the press closed it and the click leaves it closed, however long the
+/// button was held.
 fn toggle_start_menu() {
     let now = get_now_ms();
     if now - LAST_START_TOGGLE_MS.load(Ordering::Relaxed) < START_TOGGLE_DEBOUNCE_MS {
         return;
     }
     LAST_START_TOGGLE_MS.store(now, Ordering::Relaxed);
+    // Taken here, so a press is only ever used by the click it started.
+    let open_at_press = START_OPEN_AT_PRESS.swap(false, Ordering::Relaxed);
 
     tauri::async_runtime::spawn_blocking(move || {
         use windows::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_LWIN};
         if is_start_menu_open() {
             send_key_tap(VK_ESCAPE, 0);
-        } else {
+        } else if !open_at_press {
             send_key_tap(VK_LWIN, START_WIN_KEY_HOLD_MS);
         }
     });
@@ -4360,6 +4368,7 @@ pub enum SystemAction {
     InstalledApps,
     PowerOptions,
     NetworkConnections,
+    TaskView,
 }
 
 #[tauri::command]
@@ -4393,6 +4402,13 @@ pub async fn open_system_action(action: SystemAction) -> Result<(), String> {
             SystemAction::InstalledApps => ("ms-settings:appsfeatures".into(), String::new()),
             SystemAction::PowerOptions => ("ms-settings:powersleep".into(), String::new()),
             SystemAction::NetworkConnections => ("ms-settings:network".into(), String::new()),
+            // Task View's shell folder opens Task View like the taskbar's
+            // button, without sending Win+Tab, which a held Ctrl or Shift
+            // would turn into a different shortcut.
+            SystemAction::TaskView => (
+                "explorer.exe".into(),
+                "shell:::{3080F90E-D7AD-11D9-BD98-0000947B0257}".into(),
+            ),
         };
         let file: Vec<u16> = file.encode_utf16().chain(Some(0)).collect();
         let args: Vec<u16> = args.encode_utf16().chain(Some(0)).collect();
