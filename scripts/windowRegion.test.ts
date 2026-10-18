@@ -76,4 +76,12 @@ describe("window region", () => {
 		const b = nextRegion(a.state, rects, 50, 700);
 		expect(b.changed).toBe(false);
 	});
+
+	test("reports a change when only the display scale changed", () => {
+		const rects = [{ x: 1, y: 2, width: 3, height: 4 }];
+		const a = nextRegion(empty, rects, 0, 700, 1);
+		const b = nextRegion(a.state, rects, 50, 700, 1.5);
+		expect(b.changed).toBe(true);
+		expect(b.rects).toEqual(rects);
+	});
 });

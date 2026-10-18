@@ -59,6 +59,27 @@ export function notchPillBox(
 	};
 }
 
+/**
+ * Calls `callback` whenever the window's device pixel ratio (the display
+ * scale) changes. Returns a function that stops listening.
+ */
+export function onPixelRatioChange(callback: () => void): () => void {
+	let query: MediaQueryList | null = null;
+	const changed = () => {
+		watch();
+		callback();
+	};
+	// A resolution query only matches the ratio it was made for, so each
+	// change re-arms it for the new one.
+	const watch = () => {
+		query?.removeEventListener("change", changed);
+		query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+		query.addEventListener("change", changed);
+	};
+	watch();
+	return () => query?.removeEventListener("change", changed);
+}
+
 function regionKey(rects: RegionRect[]): string {
 	return rects.map((r) => `${r.x},${r.y},${r.width},${r.height}`).join(";");
 }
@@ -68,13 +89,16 @@ function regionKey(rects: RegionRect[]): string {
  * grows takes effect at once; when it shrinks, the previous rectangles are
  * held for `holdMs` so an animation leaving them isn't clipped. `changed` says
  * whether the region to send differs from the last one, and `nextExpiry` when
- * a held region runs out and the region should be recomputed.
+ * a held region runs out and the region should be recomputed. The backend
+ * turns the rectangles into physical pixels, so a change of `pixelRatio`
+ * (the display scale) also counts as a change.
  */
 export function nextRegion(
 	state: RegionState,
 	current: RegionRect[],
 	now: number,
-	holdMs: number
+	holdMs: number,
+	pixelRatio = 1
 ): { state: RegionState; rects: RegionRect[]; changed: boolean; nextExpiry: number | null } {
 	let held = state.held;
 	if (state.current.length > 0 && regionKey(current) !== regionKey(state.current)) {
@@ -82,7 +106,7 @@ export function nextRegion(
 	}
 	held = held.filter((h) => h.until > now);
 	const rects = [...current, ...held.flatMap((h) => h.rects)];
-	const key = regionKey(rects);
+	const key = `${pixelRatio}|${regionKey(rects)}`;
 	const nextExpiry = held.length > 0 ? Math.min(...held.map((h) => h.until)) : null;
 	return {
 		state: { key, current, held },

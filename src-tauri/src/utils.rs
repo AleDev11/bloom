@@ -1152,15 +1152,6 @@ pub fn dock_enabled() -> bool {
     })
 }
 
-/// Re-assert HWND_TOPMOST without activating the window.
-///
-/// Tauri's `set_always_on_top(true)` calls `SetWindowPos(HWND_TOPMOST)` without
-/// `SWP_NOACTIVATE`, which causes Windows to send `WM_ACTIVATE` to the WebView2 window.
-/// This activation message makes the WebView compositor briefly blank/hide the window,
-/// and can also strip the `WS_EX_NOACTIVATE` extended style.
-///
-/// This helper uses the raw Win32 call with the correct flags and re-stamps
-/// `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` to prevent both problems.
 /// Makes a window click-through or not by its WS_EX_TRANSPARENT bit alone,
 /// keeping WS_EX_LAYERED set in both states.
 ///
@@ -1198,6 +1189,15 @@ fn click_through_style(style: u32, ignore: bool) -> u32 {
     }
 }
 
+/// Re-assert HWND_TOPMOST without activating the window.
+///
+/// Tauri's `set_always_on_top(true)` calls `SetWindowPos(HWND_TOPMOST)` without
+/// `SWP_NOACTIVATE`, which causes Windows to send `WM_ACTIVATE` to the WebView2 window.
+/// This activation message makes the WebView compositor briefly blank/hide the window,
+/// and can also strip the `WS_EX_NOACTIVATE` extended style.
+///
+/// This helper uses the raw Win32 call with the correct flags and re-stamps
+/// `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` to prevent both problems.
 pub fn re_assert_topmost(hwnd: HWND) {
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{

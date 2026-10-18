@@ -10,6 +10,7 @@ import {
 	clipToWindow,
 	nextRegion,
 	notchPillBox,
+	onPixelRatioChange,
 	padRect,
 	type HeldRegion,
 	type RegionRect
@@ -736,12 +737,14 @@ function App() {
 		const extras: [Element | null, number][] = [
 			[musicBubbleRef.current, 16],
 			[shelfBubbleRef.current, 16],
-			...Array.from(document.querySelectorAll(".status-tooltip")).map(
-				(el): [Element, number] => [el, 28]
-			),
-			...Array.from(document.querySelectorAll(".screen-corner")).map(
-				(el): [Element, number] => [el, 0]
-			)
+			...Array.from(document.querySelectorAll(".status-tooltip")).map((el): [Element, number] => [
+				el,
+				28
+			]),
+			...Array.from(document.querySelectorAll(".screen-corner")).map((el): [Element, number] => [
+				el,
+				0
+			])
 		];
 		for (const [el, pad] of extras) {
 			if (!el) continue;
@@ -752,7 +755,13 @@ function App() {
 			.map((r) => clipToWindow(r, width, height))
 			.filter((r): r is RegionRect => r !== null);
 
-		const next = nextRegion(notchRegionRef.current, current, performance.now(), 700);
+		const next = nextRegion(
+			notchRegionRef.current,
+			current,
+			performance.now(),
+			700,
+			window.devicePixelRatio
+		);
 		notchRegionRef.current = next.state;
 		if (next.changed) {
 			invoke("set_window_region", { rects: next.rects }).catch(() => {});
@@ -2833,6 +2842,13 @@ function App() {
 	useEffect(() => {
 		if (windowLabel === "main") updateNotchRegion();
 	});
+
+	// A display scale change resizes the window in physical pixels without
+	// necessarily re-rendering, so the region is recomputed for it too.
+	useEffect(() => {
+		if (windowLabel !== "main") return;
+		return onPixelRatioChange(updateNotchRegion);
+	}, []);
 
 	return (
 		<div className="screen" style={{ overflow: "hidden" }}>
