@@ -10,7 +10,7 @@ import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
 
 import { mergeTrayApps, selectDockTrayApps, type AppInfo, type TrayApp } from "./dockApps";
 import { driveLetter, hideDrive, removeCustomFolder, type DockExtra } from "./dockExtras";
-import { createRegionSender, measureElements, type RegionRect } from "./windowRegion";
+import { createRegionSender, measureElements, padRect, type RegionRect } from "./windowRegion";
 
 // Host processes (Edge/Chrome/Brave/ApplicationFrameHost) run every PWA/UWP
 // window, so their window title must be part of their identity — otherwise two
@@ -875,10 +875,20 @@ const Dock = memo(function Dock() {
 				[".preview-tooltip", 40],
 				[".context-menu", 34],
 				[".submenu", 34],
-				[".add-app-popup", 40],
 				[".dock-toast", 20]
 			])
 		);
+		// The Add App popup grows from scaleY 0, and that animation doesn't
+		// re-render the dock, so its own box would be measured collapsed. Its
+		// anchor isn't transformed and is exactly as tall as the open popup, so
+		// the height comes from there and the width from the popup itself.
+		const popup = popupRef.current;
+		const anchor = popup?.parentElement;
+		if (popup && anchor) {
+			const p = popup.getBoundingClientRect();
+			const a = anchor.getBoundingClientRect();
+			wanted.push(padRect({ x: p.left, y: a.top, width: p.width, height: a.height }, 40));
+		}
 		sendDockRegion(wanted);
 	});
 
