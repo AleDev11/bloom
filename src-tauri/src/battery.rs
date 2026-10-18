@@ -139,15 +139,36 @@ fn details_sync() -> BatteryDetails {
     details
 }
 
+/// Initializes COM on the current thread for the guard's lifetime. Every
+/// successful `CoInitializeEx` (S_FALSE included, when the thread already had
+/// COM) must be balanced by `CoUninitialize` on the same thread; a failed one
+/// (such as RPC_E_CHANGED_MODE) must not be. The command runs on pooled
+/// blocking threads, so an unbalanced call would accumulate across hovers.
+struct ComGuard {
+    initialized: bool,
+}
+
+impl ComGuard {
+    fn new() -> Self {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        Self {
+            initialized: unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok(),
+        }
+    }
+}
+
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        if self.initialized {
+            unsafe { windows::Win32::System::Com::CoUninitialize() };
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_battery_details() -> Result<BatteryDetails, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        unsafe {
-            let _ = windows::Win32::System::Com::CoInitializeEx(
-                None,
-                windows::Win32::System::Com::COINIT_MULTITHREADED,
-            );
-        }
+        let _com = ComGuard::new();
         details_sync()
     })
     .await
@@ -157,6 +178,43 @@ pub async fn get_battery_details() -> Result<BatteryDetails, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, S_OK};
+    use windows::Win32::System::Com::{
+        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED,
+    };
+
+    #[test]
+    fn com_guard_balances_every_initialization() {
+        std::thread::spawn(|| unsafe {
+            for _ in 0..3 {
+                assert!(ComGuard::new().initialized);
+            }
+            // A thread with no COM left initializes afresh (S_OK); a leftover
+            // initialization would make this S_FALSE.
+            assert_eq!(CoInitializeEx(None, COINIT_MULTITHREADED), S_OK);
+            CoUninitialize();
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn com_guard_leaves_a_failed_initialization_alone() {
+        std::thread::spawn(|| unsafe {
+            assert_eq!(CoInitializeEx(None, COINIT_APARTMENTTHREADED), S_OK);
+            let guard = ComGuard::new();
+            assert!(!guard.initialized);
+            drop(guard);
+            // The thread's own apartment survived the guard.
+            assert_eq!(
+                CoInitializeEx(None, COINIT_MULTITHREADED),
+                RPC_E_CHANGED_MODE
+            );
+            CoUninitialize();
+        })
+        .join()
+        .unwrap();
+    }
 
     fn status(ac: u8, flag: u8, percent: u8, life: u32) -> SYSTEM_POWER_STATUS {
         SYSTEM_POWER_STATUS {
