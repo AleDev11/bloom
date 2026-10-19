@@ -15,8 +15,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetWindowLongW, GetWindowThreadProcessId, IsWindowVisible, SetWindowsHookExW,
-    GWL_EXSTYLE, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MOUSEMOVE, WS_EX_APPWINDOW,
-    WS_EX_TOOLWINDOW,
+    GWL_EXSTYLE, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use wmi::{COMLibrary, WMIConnection};
 
@@ -2252,8 +2252,8 @@ fn apply_capture_ui_state(app: &AppHandle, active: bool) {
         }
     }
     if active {
-        if let Some(dock_win) = app.get_webview_window("dock") {
-            let _ = dock_win.set_ignore_cursor_events(true);
+        if let Some(hwnd) = app.get_webview_window("dock").and_then(|w| w.hwnd().ok()) {
+            set_click_through(hwnd, true);
         }
         if let Some(ov_win) = app.get_webview_window("overlay") {
             let _ = ov_win.set_ignore_cursor_events(true);
@@ -2608,7 +2608,9 @@ fn update_main_interaction(
         MH_LAST_TOP_EDGE_HOVER.store(new_val, Ordering::Relaxed);
     }
 
-    let final_ignore = !is_click_interactive && !MENU_IS_OPEN.load(Ordering::Relaxed);
+    // An open dock menu no longer makes the notch take clicks: a press outside
+    // the menu is caught by the mouse hook instead (see mouse_hook_proc).
+    let final_ignore = !is_click_interactive;
     let prev_ignore = MH_LAST_MAIN_IGNORE.load(Ordering::Relaxed);
     let new_ignore = if final_ignore { 1 } else { 0 };
     if prev_ignore != new_ignore {
@@ -2733,12 +2735,13 @@ fn update_dock_interaction(
         // bottom edge), so keep it click-through.
         MH_DOCK_EDGE_ENTER_MS.store(0, Ordering::Relaxed);
         MH_DOCK_EDGE_ARMED.store(false, Ordering::Relaxed);
-        if MH_LAST_DOCK_IGNORE.load(Ordering::Relaxed) != 1 {
-            if let Some(dock_win) = app_handle.get_webview_window("dock") {
-                let _ = dock_win.set_ignore_cursor_events(true);
-            }
-            MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
+        if let Some(hwnd) = app_handle
+            .get_webview_window("dock")
+            .and_then(|w| w.hwnd().ok())
+        {
+            set_click_through(hwnd, true);
         }
+        MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
         if MH_LAST_EDGE_HOVER.swap(0, Ordering::Relaxed) != 0 {
             let _ = app_handle.emit("dock-edge-hover", false);
         }
@@ -2864,15 +2867,21 @@ fn update_dock_interaction(
         MH_LAST_EDGE_HOVER.store(new_val, Ordering::Relaxed);
     }
 
-    let should_ignore = !is_click_interactive && !MENU_IS_OPEN.load(Ordering::Relaxed);
+    // An open menu or popup takes clicks only over itself (MENU_RECT above);
+    // a press anywhere else closes it through the mouse hook.
+    let should_ignore = !is_click_interactive;
     let prev_ignore = MH_LAST_DOCK_IGNORE.load(Ordering::Relaxed);
     let new_ignore = if should_ignore { 1 } else { 0 };
     if prev_ignore != new_ignore {
         if let Ok(hwnd) = dock_win.hwnd() {
             re_assert_topmost(hwnd);
         }
-        let _ = dock_win.set_ignore_cursor_events(should_ignore);
         MH_LAST_DOCK_IGNORE.store(new_ignore, Ordering::Relaxed);
+    }
+    // Every update, as for the notch: writes only when the style differs, and
+    // repairs a style tao rewrote.
+    if let Ok(hwnd) = dock_win.hwnd() {
+        set_click_through(hwnd, should_ignore);
     }
 }
 
@@ -2911,7 +2920,56 @@ unsafe extern "system" fn mouse_hook_proc(
     if code >= 0 && wparam.0 == WM_LBUTTONDOWN as usize {
         START_OPEN_AT_PRESS.store(crate::commands::is_start_menu_open(), Ordering::Relaxed);
     }
+    // A dock menu or the Add App popup closes when you press outside it. The
+    // dock window's region keeps it from catching that press, so the dock
+    // can't see it; tell it here. The flag is cleared now, so it can't be left
+    // set even if the dock webview never answers.
+    if code >= 0
+        && (wparam.0 == WM_LBUTTONDOWN as usize || wparam.0 == WM_RBUTTONDOWN as usize)
+        && MENU_IS_OPEN.load(Ordering::Relaxed)
+    {
+        let point = (*(lparam.0 as *const MSLLHOOKSTRUCT)).pt;
+        if !dock_takes_press(point) {
+            MENU_IS_OPEN.store(false, Ordering::Relaxed);
+            if let Some(app) = WINDOW_CHANGE_APP_HANDLE.get().cloned() {
+                // Off the hook thread: a low-level hook must return quickly.
+                std::thread::spawn(move || {
+                    let _ = app.emit("dock-dismiss-menu", ());
+                });
+            }
+        }
+    }
     CallNextHookEx(None, code, wparam, lparam)
+}
+
+/// Whether the dock window takes a press at `point`: it isn't click-through
+/// and the point is inside its window region. Such a press reaches the dock,
+/// which closes its menus itself.
+unsafe fn dock_takes_press(point: windows::Win32::Foundation::POINT) -> bool {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, GetWindowRgn, PtInRegion};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let hwnd = HWND(DOCK_HWND.load(Ordering::Relaxed) as *mut _);
+    if hwnd.0.is_null() || GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TRANSPARENT.0 != 0 {
+        return false;
+    }
+    let mut bounds = RECT::default();
+    if GetWindowRect(hwnd, &mut bounds).is_err() {
+        return false;
+    }
+    let region = CreateRectRgn(0, 0, 0, 0);
+    // No region yet means the whole window.
+    let inside = if GetWindowRgn(hwnd, region).0 == 0 {
+        point.x >= bounds.left
+            && point.x < bounds.right
+            && point.y >= bounds.top
+            && point.y < bounds.bottom
+    } else {
+        PtInRegion(region, point.x - bounds.left, point.y - bounds.top).as_bool()
+    };
+    let _ = DeleteObject(region.into());
+    inside
 }
 
 fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Foundation::POINT) {
@@ -2930,12 +2988,13 @@ fn process_mouse_position(app_handle: &AppHandle, cursor: windows::Win32::Founda
                 set_click_through(hwnd, true);
             }
             MH_LAST_MAIN_IGNORE.store(1, Ordering::Relaxed);
-            if MH_LAST_DOCK_IGNORE.load(Ordering::Relaxed) != 1 {
-                if let Some(w) = app_handle.get_webview_window("dock") {
-                    let _ = w.set_ignore_cursor_events(true);
-                }
-                MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
+            if let Some(hwnd) = app_handle
+                .get_webview_window("dock")
+                .and_then(|w| w.hwnd().ok())
+            {
+                set_click_through(hwnd, true);
             }
+            MH_LAST_DOCK_IGNORE.store(1, Ordering::Relaxed);
             if MH_LAST_OV_IGNORE.load(Ordering::Relaxed) != 1 {
                 if let Some(w) = app_handle.get_webview_window("overlay") {
                     let _ = w.set_ignore_cursor_events(true);
