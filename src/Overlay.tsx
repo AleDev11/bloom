@@ -1,4 +1,4 @@
-import { StrictMode, useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
+import { StrictMode, useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { motion, AnimatePresence } from "framer-motion";
 import { listen, emit } from "@tauri-apps/api/event";
@@ -12,6 +12,7 @@ import { MixerIcon, SpeakerIcon } from "./icons";
 import "./Overlay.css";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
+import { createRegionSender, measureElements, type RegionRect } from "./windowRegion";
 
 // ─── App Volume Mixer ───────────────────────────────────────────────────────
 
@@ -164,6 +165,15 @@ const MIXER_COLUMN_GAP = 4;
 const MIXER_PANEL_PADDING = 8;
 const MIXER_MAX_COLUMNS = 4;
 const MIXER_EMPTY_COLUMNS = 2;
+// The widest the mixer panel gets, for the overlay's window region.
+const MIXER_MAX_PANEL_WIDTH =
+	MIXER_PANEL_PADDING * 2 +
+	MIXER_MAX_COLUMNS * MIXER_COLUMN_WIDTH +
+	(MIXER_MAX_COLUMNS - 1) * MIXER_COLUMN_GAP;
+// A HUD card's size in CSS px before `bloom-scale`; the backend's edge
+// hit-testing uses the same 42x196.
+const HUD_CARD_WIDTH = 42;
+const HUD_CARD_HEIGHT = 196;
 
 // Last fetched session list, so reopening the mixer renders at the right width
 // immediately instead of growing out of the empty-state width.
@@ -910,6 +920,48 @@ function OverlayApp() {
 	);
 
 	const isLeft = mode === "volume";
+
+	const sendOverlayRegion = useMemo(
+		() =>
+			createRegionSender((rects) => {
+				invoke("set_window_region", { rects }).catch(() => {});
+			}),
+		[]
+	);
+
+	// Clip the full-screen overlay to what it draws (see window_region.rs).
+	// The splashes cover the screen. Otherwise each HUD has a home zone at its
+	// edge, the full card size, so a card scaling in from the edge is never
+	// clipped; with the mixer open the left zone spans the widest mixer. The
+	// HUDs and the mixer panel are measured on top, padded for their shadows.
+	useEffect(() => {
+		const width = window.innerWidth;
+		const height = window.innerHeight;
+		if (mode === "splash" || mode === "updating") {
+			sendOverlayRegion([{ x: 0, y: 0, width, height }]);
+			return;
+		}
+		const pad = 24 * scale;
+		const cardWidth = HUD_CARD_WIDTH * scale;
+		const cardHeight = HUD_CARD_HEIGHT * scale;
+		const leftWidth =
+			(mixerExpanded ? HUD_CARD_WIDTH + MIXER_MAX_PANEL_WIDTH : HUD_CARD_WIDTH) * scale;
+		const zone = (x: number, w: number): RegionRect => ({
+			x,
+			y: (height - cardHeight) / 2 - pad,
+			width: w,
+			height: cardHeight + pad * 2
+		});
+		sendOverlayRegion([
+			zone(0, leftWidth + pad),
+			zone(width - cardWidth - pad, cardWidth + pad),
+			...measureElements([
+				[".volume-notch-wrapper", 24],
+				[".volume-mixer-panel", 24],
+				[".brightness-notch-wrapper", 24]
+			])
+		]);
+	});
 
 	return (
 		<div className="overlay-container">
