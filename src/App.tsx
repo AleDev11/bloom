@@ -445,6 +445,8 @@ type BloomMode =
 
 // A device that just connected or disconnected, shown briefly in the pill.
 interface DeviceAlert {
+	// The device's id, so a later battery report can find its alert.
+	id: string;
 	art: DeviceArtKey;
 	name: string;
 	connected: boolean;
@@ -747,7 +749,18 @@ function App() {
 		dismiss: dismissAnnouncement
 	} = useAnnouncement();
 	const [deviceAlert, setDeviceAlert] = useState<DeviceAlert | null>(null);
+	// True from an alert appearing until its exit animation has finished, so
+	// the clock row only comes back once the alert has faded out.
+	const [deviceAlertOnScreen, setDeviceAlertOnScreen] = useState(false);
+	const deviceAlertRef = useRef<DeviceAlert | null>(null);
+	deviceAlertRef.current = deviceAlert;
 	const deviceAlertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(
+		() => () => {
+			if (deviceAlertTimerRef.current) clearTimeout(deviceAlertTimerRef.current);
+		},
+		[]
+	);
 	const announcementShownRef = useRef<string | null>(null);
 	const announcementOpen = !!announcement && !announcementDismissed;
 	const announcementOpenRef = useRef(false);
@@ -2114,6 +2127,7 @@ function App() {
 			if (isOpenRef.current || mode === "announcement" || mode === "shelf") return;
 			const duration = alert.connected ? DEVICE_ALERT_MS.connected : DEVICE_ALERT_MS.disconnected;
 			setDeviceAlert({ ...alert, runId: Date.now() });
+			setDeviceAlertOnScreen(true);
 			setBloomMode("device");
 			if (notchMode === "peek") triggerEventPeek(duration);
 			if (deviceAlertTimerRef.current) clearTimeout(deviceAlertTimerRef.current);
@@ -2124,27 +2138,48 @@ function App() {
 
 	useEffect(() => {
 		if (windowLabel !== "main") return;
-		const unlisten = listen<BluetoothConnection>("bluetooth-connection", ({ payload }) => {
+		const unlistenConnection = listen<BluetoothConnection>("bluetooth-connection", ({ payload }) => {
 			showDeviceAlert({
+				id: payload.id,
 				art: deviceArtFor(payload),
 				name: payload.name,
 				connected: payload.connected,
 				battery: payload.battery
 			});
 		});
+		// Windows often reports a battery level a moment after the device
+		// connects; fill it into the alert if that device is still showing.
+		const unlistenBattery = listen<{ id: string; battery: number }>("bluetooth-battery", ({ payload }) => {
+			setDeviceAlert((alert) =>
+				alert && alert.id === payload.id && alert.connected ? { ...alert, battery: payload.battery } : alert
+			);
+		});
 		return () => {
-			unlisten.then((f) => f());
+			unlistenConnection.then((f) => f());
+			unlistenBattery.then((f) => f());
 		};
 	}, [windowLabel, showDeviceAlert]);
 
 	// In a dev build, any drawing can be shown from the console, e.g.
-	// __bloomDeviceAlert("stem-buds", "AirPods Pro", true, 82).
+	// __bloomDeviceAlert("stem-buds", "AirPods Pro", true, 82), and a late
+	// battery report sent with __bloomDeviceBattery("dev", 64).
 	useEffect(() => {
 		if (!import.meta.env.DEV) return;
 		const w = window as unknown as Record<string, unknown>;
 		w.__bloomDeviceAlert = (art: DeviceArtKey, name: string, connected = true, battery: number | null = null) =>
-			showDeviceAlert({ art, name, connected, battery });
+			showDeviceAlert({ id: "dev", art, name, connected, battery });
+		w.__bloomDeviceBattery = (id: string, battery: number) =>
+			setDeviceAlert((alert) => (alert && alert.id === id && alert.connected ? { ...alert, battery } : alert));
 	}, [showDeviceAlert]);
+
+	// The clock row normally returns when the alert's exit animation ends.
+	// If the alert never rendered (the notch was still starting up), there's
+	// no exit to wait for, so bring it back shortly after the alert ends.
+	useEffect(() => {
+		if (deviceAlert) return;
+		const timer = setTimeout(() => setDeviceAlertOnScreen(false), 400);
+		return () => clearTimeout(timer);
+	}, [deviceAlert]);
 
 	// Back to the resting view once the alert is over.
 	useEffect(() => {
@@ -3339,7 +3374,7 @@ function App() {
 											<div
 												className="main-row"
 												// A device alert covers the whole pill.
-												style={bloomMode === "device" ? { visibility: "hidden" } : undefined}
+												style={bloomMode === "device" || deviceAlertOnScreen ? { visibility: "hidden" } : undefined}
 											>
 												<AnimatePresence mode="wait">
 													{(showPowerPulse || showLowBatteryPulse || showUpdatePulse) &&
@@ -3891,7 +3926,11 @@ function App() {
 
 								{/* Device alert: a device connected or disconnected. A
 								    click opens the Bluetooth view. */}
-								<AnimatePresence>
+								<AnimatePresence
+									// An alert arriving while the last one fades out keeps the
+									// clock row hidden.
+									onExitComplete={() => setDeviceAlertOnScreen(deviceAlertRef.current !== null)}
+								>
 									{bloomMode === "device" && deviceAlert && (
 										<motion.div
 											className="device-alert"

@@ -487,6 +487,39 @@ fn emit<S: Serialize + Clone>(event: &str, payload: S) {
     }
 }
 
+#[derive(Clone, Serialize)]
+pub struct BtBatteryEvent {
+    pub id: String,
+    pub battery: u8,
+}
+
+/// The battery level of a connected device, found by id or, as its id can
+/// switch between its classic and LE endpoints, by name.
+fn connected_battery(devices: &[BtDevice], id: &str, name: &str) -> Option<u8> {
+    devices
+        .iter()
+        .find(|d| d.id == id)
+        .or_else(|| devices.iter().find(|d| d.name == name))
+        .filter(|d| d.connected)
+        .and_then(|d| d.battery)
+}
+
+/// Windows often reports a device's battery a moment after it connects, so
+/// a connection reported without one is checked again shortly after, and
+/// the level sent as `bluetooth-battery` once it's known.
+fn follow_up_battery(id: String, name: String) {
+    std::thread::spawn(move || {
+        com_init();
+        for wait in [1500, 2000] {
+            std::thread::sleep(Duration::from_millis(wait));
+            if let Some(battery) = connected_battery(&list_sync(), &id, &name) {
+                emit("bluetooth-battery", BtBatteryEvent { id, battery });
+                return;
+            }
+        }
+    });
+}
+
 fn notify_paired_change(tx: &Sender<()>) {
     emit("bluetooth-changed", ());
     let _ = tx.send(());
@@ -552,7 +585,12 @@ pub fn setup_bluetooth_notifications(app: AppHandle) {
                 let current = list_sync();
                 if started.elapsed() >= Duration::from_secs(5) {
                     for change in connection_changes(&previous, &current) {
+                        let needs_battery = change.connected && change.battery.is_none();
+                        let (id, name) = (change.id.clone(), change.name.clone());
                         emit("bluetooth-connection", change);
+                        if needs_battery {
+                            follow_up_battery(id, name);
+                        }
                     }
                 }
                 previous = current;
@@ -871,6 +909,25 @@ mod tests {
         assert_eq!(le_kind(0x03, 0), "wearable");
         assert_eq!(le_kind(0x25, 0), "audio");
         assert_eq!(le_kind(0x00, 0), "other");
+    }
+
+    #[test]
+    fn finds_a_connected_device_battery_by_id_or_name() {
+        let mut le = sample_device("le-id", true);
+        le.name = "Headphones".into();
+        le.battery = Some(64);
+        let mut off = sample_device("off", false);
+        off.battery = Some(10);
+        let devices = [le, off];
+        assert_eq!(connected_battery(&devices, "le-id", "x"), Some(64));
+        // The id moved to the other endpoint: found by name.
+        assert_eq!(
+            connected_battery(&devices, "classic-id", "Headphones"),
+            Some(64)
+        );
+        // Disconnected or unknown devices report nothing.
+        assert_eq!(connected_battery(&devices, "off", "off"), None);
+        assert_eq!(connected_battery(&devices, "nope", "nope"), None);
     }
 
     #[test]
