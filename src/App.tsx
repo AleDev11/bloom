@@ -40,6 +40,7 @@ import { WifiPanel } from "./components/WifiPanel";
 import { BluetoothPanel } from "./components/BluetoothPanel";
 import { DeviceArt, DeviceArtDefs } from "./devices/DeviceArt";
 import { deviceArtFor } from "./devices/deviceArtFor";
+import { deviceLookFor } from "./devices/deviceLooks";
 import { usbArtFor, usbDisplayName, type UsbIdentity } from "./devices/usbArtFor";
 import type { DeviceArtKey } from "./devices/art";
 import {
@@ -2173,7 +2174,7 @@ function App() {
 		const unlistenConnection = listen<BluetoothConnection>("bluetooth-connection", ({ payload }) => {
 			showDeviceAlert({
 				id: payload.id,
-				art: deviceArtFor(payload),
+				art: deviceLookFor(payload.name) ?? deviceArtFor(payload),
 				name: payload.name,
 				connected: payload.connected,
 				battery: payload.battery
