@@ -846,6 +846,7 @@ function App() {
 	const isAnyInteraction = isHovered || isNotchHovered || isEdgeHovered;
 	const isHidden =
 		!startupAnimating &&
+		!deviceAlertOnScreen &&
 		((notchMode === "smart" && isOverlapped && interactionState === "none") ||
 			(notchMode === "peek" && interactionState === "none" && !eventPeek));
 
@@ -2133,7 +2134,7 @@ function App() {
 	// A device connecting or disconnecting takes the pill for a few seconds,
 	// like the Dynamic Island: its drawing, name and battery. It never takes
 	// over a notch the user has open, an announcement or the shelf. In peek
-	// mode it shows the notch for as long as it lasts.
+	// and smart modes it shows the notch for as long as it lasts.
 	//
 	// Alerts for other devices wait their turn (two drives plugged in
 	// together show one after the other); a newer alert for the device on
