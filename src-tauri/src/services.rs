@@ -1480,6 +1480,13 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 if !found_window {
                     hwnd = HWND(std::ptr::null_mut());
                 }
+                // Overlap uses the expanded content width. Hit-testing still
+                // uses DOCK_RECT, which includes the live pill and previews.
+                let overlap_span = DOCK_OVERLAP_RECT
+                    .lock()
+                    .ok()
+                    .and_then(|r| *r)
+                    .map(|r| dock_span_px(r, cached_scale));
 
                 let mut should_overlap = false;
                 let mut should_notch_overlap = false;
@@ -1604,22 +1611,12 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                                         should_maximized = is_maximized && !current_is_fs;
                                     } else if is_primary {
                                         should_overlap = false;
-                                        if let Ok(dock_rect_lock) = DOCK_RECT.lock() {
-                                            if let Some(dr) = *dock_rect_lock {
-                                                let scale = cached_scale;
-                                                let d_left = (dr.x as f64 * scale) as i32;
-                                                let d_right =
-                                                    d_left + (dr.width as f64 * scale) as i32;
-                                                let res_h = (56.0 * scale) as i32;
-                                                let trigger_y = screen_rect.bottom - res_h;
-
-                                                if rect.left < d_right - 4
-                                                    && rect.right > d_left + 4
-                                                    && rect.bottom > trigger_y + 4
-                                                {
-                                                    should_overlap = true;
-                                                }
-                                            }
+                                        if let Some(span) = overlap_span {
+                                            should_overlap = window_reaches_dock(
+                                                span,
+                                                (rect.left, rect.right, rect.bottom),
+                                                screen_rect.bottom - (56.0 * cached_scale) as i32,
+                                            );
                                         }
 
                                         if let Ok(notch_rect_lock) = NOTCH_RECT.lock() {
@@ -1742,6 +1739,15 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
     });
 
     tx
+}
+
+fn dock_span_px(dock: IntRect, scale: f64) -> (i32, i32) {
+    let left = (dock.x as f64 * scale) as i32;
+    (left, left + (dock.width as f64 * scale) as i32)
+}
+
+fn window_reaches_dock(span: (i32, i32), window: (i32, i32, i32), trigger_y: i32) -> bool {
+    window.0 < span.1 - 4 && window.1 > span.0 + 4 && window.2 > trigger_y + 4
 }
 
 fn set_physical_monitors_brightness(brightness: u32) {
@@ -4557,6 +4563,40 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn smart_dock_overlap_uses_the_expanded_bar_instead_of_the_live_pill() {
+        let expanded = super::dock_span_px(
+            crate::types::IntRect {
+                x: 320,
+                y: 0,
+                width: 640,
+                height: 56,
+            },
+            1.5,
+        );
+        assert_eq!(expanded, (480, 1440));
+        let pill = (935, 985);
+        let run_dialog = (12, 620, 1190);
+        let trigger_y = 1116;
+        assert!(super::window_reaches_dock(expanded, run_dialog, trigger_y));
+        assert!(!super::window_reaches_dock(pill, run_dialog, trigger_y));
+        assert!(!super::window_reaches_dock(
+            expanded,
+            (12, 620, 900),
+            trigger_y
+        ));
+        assert!(!super::window_reaches_dock(
+            expanded,
+            (0, 400, 1190),
+            trigger_y
+        ));
+        assert!(!super::window_reaches_dock(
+            expanded,
+            (1500, 1800, 1190),
+            trigger_y
+        ));
+    }
+
     use super::{
         is_helper_name, is_launchable_entry, is_primary_monitor, is_start_menu_process_path,
         notch_mode_reserves_work_area, pack_cursor, process_exe_name, trim_thumbnail_cache,
