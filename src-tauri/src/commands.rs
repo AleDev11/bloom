@@ -122,9 +122,14 @@ pub fn shelf_drag_icon() -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn update_dock_rect(rect: IntRect) {
+pub async fn update_dock_rect(rect: IntRect, overlap_rect: Option<IntRect>) {
     if let Ok(mut r) = DOCK_RECT.lock() {
         *r = Some(rect);
+    }
+    if let Some(rect) = overlap_rect {
+        if let Ok(mut r) = DOCK_OVERLAP_RECT.lock() {
+            *r = Some(rect);
+        }
     }
 }
 

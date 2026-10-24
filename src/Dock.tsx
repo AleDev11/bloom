@@ -7,6 +7,7 @@ import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 import { useSettingsSync } from "./hooks/useSettingsSync";
 import { reloadIfMirrorWasStale } from "./hooks/settingsMirror";
+import { dockOverlapSpan } from "./dockGeometry";
 
 import {
 	dockIconKey,
@@ -334,13 +335,26 @@ const Dock = memo(function Dock() {
 			if (dockRef.current) {
 				const rect = dockRef.current.getBoundingClientRect();
 				const hasPreview = !!previewData;
+				const content = dockRef.current.querySelector<HTMLElement>(".dock-reorder-container");
+				const style = getComputedStyle(dockRef.current);
+				const overlap = content
+					? dockOverlapSpan(
+							window.innerWidth,
+							content.scrollWidth,
+							parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
+							scale
+						)
+					: null;
 				invoke("update_dock_rect", {
 					rect: {
 						x: Math.round(rect.x) - (hasPreview ? 500 : 0),
 						y: Math.round(rect.y) - (hasPreview ? 320 : 0),
 						width: Math.round(rect.width) + (hasPreview ? 1000 : 0),
 						height: Math.round(rect.height) + (hasPreview ? 320 : 0)
-					}
+					},
+					overlapRect: overlap
+						? { ...overlap, y: Math.round(rect.y), height: Math.round(rect.height) }
+						: null
 				}).catch(() => {});
 			}
 		};
@@ -349,12 +363,14 @@ const Dock = memo(function Dock() {
 		window.addEventListener("resize", updateRect);
 		const observer = new ResizeObserver(updateRect);
 		if (dockRef.current) observer.observe(dockRef.current);
+		const content = dockRef.current?.querySelector(".dock-reorder-container");
+		if (content) observer.observe(content);
 
 		return () => {
 			window.removeEventListener("resize", updateRect);
 			observer.disconnect();
 		};
-	}, [pinnedApps, activeApps, isHidden, previewData, scale]);
+	}, [pinnedApps, activeApps, isHidden, isExpanded, previewData, scale]);
 
 	useEffect(() => {
 		const init = async () => {
