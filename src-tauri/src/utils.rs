@@ -256,28 +256,46 @@ pub fn restore_taskbar_after_crash() {
 }
 
 pub fn secondary_taskbar_windows() -> Vec<windows::Win32::Foundation::HWND> {
-    use windows::core::BOOL;
-    use windows::Win32::Foundation::{HWND, LPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetClassNameA};
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowExA;
 
-    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let windows = &mut *(lparam.0 as *mut Vec<HWND>);
-        let mut class = [0u8; 64];
-        let length = GetClassNameA(hwnd, &mut class);
-        if &class[..length as usize] == b"Shell_SecondaryTrayWnd" {
-            windows.push(hwnd);
-        }
-        BOOL(1)
-    }
-
+    // The 150 ms visibility loop calls this. FindWindowEx looks windows up by
+    // class without a callback per top-level window, as EnumWindows needs.
+    let class = windows::core::PCSTR(c"Shell_SecondaryTrayWnd".as_ptr() as *const u8);
     let mut windows = Vec::new();
+    let mut after = None;
     unsafe {
-        let _ = EnumWindows(
-            Some(collect),
-            LPARAM(&mut windows as *mut Vec<HWND> as isize),
-        );
+        while let Ok(hwnd) = FindWindowExA(None, after, class, windows::core::PCSTR::null()) {
+            if hwnd.is_invalid() {
+                break;
+            }
+            windows.push(hwnd);
+            after = Some(hwnd);
+        }
     }
     windows
+}
+
+/// `bloom-keep-secondary-taskbars`, on unless set to "false". The dock only
+/// covers the primary monitor, so hiding the other monitors' taskbars leaves
+/// them with no taskbar at all.
+fn keep_secondary_taskbars() -> bool {
+    crate::state::SETTINGS_CACHE.get().is_none_or(|cache| {
+        cache.lock().is_ok_and(|settings| {
+            settings
+                .get("bloom-keep-secondary-taskbars")
+                .and_then(|v| v.as_str())
+                != Some("false")
+        })
+    })
+}
+
+/// The secondary taskbars Bloom hides along with the primary one.
+pub fn hidden_secondary_taskbar_windows() -> Vec<windows::Win32::Foundation::HWND> {
+    if keep_secondary_taskbars() {
+        Vec::new()
+    } else {
+        secondary_taskbar_windows()
+    }
 }
 
 pub fn any_native_taskbar_visible() -> bool {
@@ -286,7 +304,7 @@ pub fn any_native_taskbar_visible() -> bool {
         let primary = windows::core::PCSTR(c"Shell_TrayWnd".as_ptr() as *const u8);
         FindWindowA(primary, windows::core::PCSTR::null())
             .is_ok_and(|hwnd| IsWindowVisible(hwnd).as_bool())
-            || secondary_taskbar_windows()
+            || hidden_secondary_taskbar_windows()
                 .into_iter()
                 .any(|hwnd| IsWindowVisible(hwnd).as_bool())
     }
@@ -373,8 +391,13 @@ pub fn set_taskbar_visibility(visible: bool, always_on_top: bool) -> bool {
         let Ok(tray_hwnd) = FindWindowA(tray_class, windows::core::PCSTR::null()) else {
             return false;
         };
-        // Every secondary taskbar, including third and later monitors.
-        let secondary_trays = secondary_taskbar_windows();
+        // Every secondary taskbar, including third and later monitors. Restoring
+        // covers them all, in case the keep setting changed since they were hidden.
+        let secondary_trays = if visible {
+            secondary_taskbar_windows()
+        } else {
+            hidden_secondary_taskbar_windows()
+        };
 
         // Legacy crash markers did not save the original window rectangle.
         // Explorer's AppBar position can still recover it after Bloom moved the

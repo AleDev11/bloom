@@ -117,6 +117,9 @@ export function useSettings() {
 	const [dockTaskView, setDockTaskView] = useState(
 		() => localStorage.getItem("bloom-dock-task-view") === "true"
 	);
+	const [keepSecondaryTaskbars, setKeepSecondaryTaskbars] = useState(
+		() => localStorage.getItem("bloom-keep-secondary-taskbars") !== "false"
+	);
 	const [dockExtrasFolders, setDockExtrasFolders] = useState(
 		() => localStorage.getItem("bloom-dock-extras-folders") ?? DEFAULT_ENABLED_FOLDERS
 	);
@@ -225,6 +228,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-extras-drives"), setDockExtrasDrives, readBool);
 			apply(getVal("bloom-dock-extras-recycle-bin"), setDockExtrasRecycleBin, readBool);
 			apply(getVal("bloom-dock-task-view"), setDockTaskView, readBool);
+			apply(getVal("bloom-keep-secondary-taskbars"), setKeepSecondaryTaskbars, readBool);
 			apply(getVal("bloom-dock-extras-hidden-drives"), setDockExtrasHiddenDrives, (v) => v);
 			apply(getVal("bloom-dock-extras-folders"), setDockExtrasFolders, (v) => v);
 			apply(getVal("bloom-dock-extras-custom-folders"), setDockExtrasCustomFolders, (v) => v);
@@ -360,6 +364,7 @@ export function useSettings() {
 		"bloom-dock-extras-drives": setDockExtrasDrives,
 		"bloom-dock-extras-recycle-bin": setDockExtrasRecycleBin,
 		"bloom-dock-task-view": setDockTaskView,
+		"bloom-keep-secondary-taskbars": setKeepSecondaryTaskbars,
 		"bloom-dock-extras-hidden-drives": setDockExtrasHiddenDrives,
 		"bloom-dock-extras-folders": setDockExtrasFolders,
 		"bloom-dock-extras-custom-folders": setDockExtrasCustomFolders,
@@ -695,6 +700,12 @@ export function useSettings() {
 		saveSetting("bloom-dock-extras-recycle-bin", String(next));
 	};
 
+	const toggleKeepSecondaryTaskbars = () => {
+		const next = !keepSecondaryTaskbars;
+		setKeepSecondaryTaskbars(next);
+		saveSetting("bloom-keep-secondary-taskbars", String(next));
+	};
+
 	const toggleDockTaskView = () => {
 		const next = !dockTaskView;
 		setDockTaskView(next);
@@ -1028,6 +1039,8 @@ export function useSettings() {
 		toggleDockExtrasRecycleBin,
 		dockTaskView,
 		toggleDockTaskView,
+		keepSecondaryTaskbars,
+		toggleKeepSecondaryTaskbars,
 		dockExtrasFolders,
 		toggleDockExtraFolder,
 		dockExtrasCustomFolders,

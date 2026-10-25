@@ -83,7 +83,6 @@ pub static DOCK_WINDOW_RECT: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u
     Mutex::new(None);
 
 pub static DISPLAY_MONITOR_HANDLE: OnceLock<AppHandle> = OnceLock::new();
-pub static LAST_DISPLAY_CHANGE_MS: AtomicI64 = AtomicI64::new(0);
 
 /// Bounds (x, y, width, height) of the expanded per-app volume mixer panel in
 /// overlay CSS pixels. `None` while the mixer is collapsed. The mouse hook

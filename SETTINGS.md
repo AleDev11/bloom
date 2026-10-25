@@ -129,6 +129,7 @@ Example:
 | `bloom-show-update-indicator`  | `"true"` / `"false"` | `"true"`  | Show a green dot on the notch when an update is available.                                           |
 | `bloom-announcement-dismissed` | announcement id      | `""`      | ID of the last dismissed in-app announcement (published via `website/public/announcements.json`).    |
 | `bloom-time-format-24h`        | `"system"` / `"true"` / `"false"` | `"system"` | Clock format in the notch. **system** follows the short-time pattern of Windows' regional format, live. `"true"` = 24-hour, `"false"` = 12-hour with AM/PM. |
+| `bloom-keep-secondary-taskbars` | `"true"` / `"false"` | `"true"` | Leave Windows' taskbar on monitors other than the primary one (the dock only covers the primary). They follow the auto-hide state Bloom sets. Applies after a restart. |
 | `bloom-language`               | `"system"` / `"en"` / `"es"` | `"system"` | Interface language. **system** follows the Windows display language (Spanish → `es`, anything else → `en`). Webviews switch live; the tray menu switches on restart. |
 
 ### Internal (Do Not Edit Manually)

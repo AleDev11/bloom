@@ -18,7 +18,8 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Plus,
-	X
+	X,
+	MonitorSmartphone
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 import { t, useLanguage } from "../i18n";
@@ -130,6 +131,8 @@ interface DockTabProps {
 	toggleDockExtrasRecycleBin: () => void;
 	dockTaskView: boolean;
 	toggleDockTaskView: () => void;
+	keepSecondaryTaskbars: boolean;
+	toggleKeepSecondaryTaskbars: () => void;
 	dockExtrasFolders: string;
 	toggleDockExtraFolder: (id: string) => void;
 	dockExtrasCustomFolders: string;
@@ -166,6 +169,8 @@ export function DockTab({
 	toggleDockExtrasRecycleBin,
 	dockTaskView,
 	toggleDockTaskView,
+	keepSecondaryTaskbars,
+	toggleKeepSecondaryTaskbars,
 	dockExtrasFolders,
 	toggleDockExtraFolder,
 	dockExtrasCustomFolders,
@@ -286,9 +291,24 @@ export function DockTab({
 						</SettingRow>
 
 						<SettingRow
+							icon={MonitorSmartphone}
+							label={t("Other Monitors")}
+							desc={t("Keep the Windows taskbar on other monitors (applies after restart)")}
+						>
+							<label className="toggle-switch">
+								<input
+									type="checkbox"
+									checked={keepSecondaryTaskbars}
+									onChange={toggleKeepSecondaryTaskbars}
+								/>
+								<span className="slider"></span>
+							</label>
+						</SettingRow>
+
+						<SettingRow
 							icon={Keyboard}
-							label="Win+Number Shortcuts"
-							desc="Open pinned apps with Win+1 through Win+9"
+							label={t("Win+Number Shortcuts")}
+							desc={t("Open pinned apps with Win+1 through Win+9")}
 							divider={dockMode === "fixed"}
 						>
 							<label className="toggle-switch">

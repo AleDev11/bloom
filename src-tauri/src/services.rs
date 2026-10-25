@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender};
 use std::sync::{
-    atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU8, Ordering},
+    atomic::{
+        AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, Ordering,
+    },
     Mutex, OnceLock,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -4431,6 +4433,37 @@ pub fn setup_display_change_monitor(app_handle: AppHandle) {
     });
 }
 
+static DISPLAY_CHANGE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Repositions once `delay_ms` passes with no newer display or power event.
+/// Docking, lid close and resume send bursts of WM_DISPLAYCHANGE; acting on
+/// the first one of a burst would lay out for an in-between monitor setup.
+fn schedule_reposition(delay_ms: u64) {
+    let generation = DISPLAY_CHANGE_GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+    let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() else {
+        return;
+    };
+    let ah = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        if DISPLAY_CHANGE_GENERATION.load(Ordering::Relaxed) == generation {
+            reposition_all_windows(&ah);
+        }
+    });
+}
+
+/// Last seen AC line status from GetSystemPowerStatus; 255 is unknown.
+static LAST_AC_LINE_STATUS: AtomicU8 = AtomicU8::new(255);
+
+fn ac_line_changed() -> bool {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut status = SYSTEM_POWER_STATUS::default();
+    if unsafe { GetSystemPowerStatus(&mut status) }.is_err() {
+        return true;
+    }
+    LAST_AC_LINE_STATUS.swap(status.ACLineStatus, Ordering::Relaxed) != status.ACLineStatus
+}
+
 unsafe extern "system" fn display_monitor_proc(
     hwnd: HWND,
     msg: u32,
@@ -4444,6 +4477,7 @@ unsafe extern "system" fn display_monitor_proc(
     const WM_POWERBROADCAST: u32 = 0x0218;
     const PBT_APMPOWERSTATUSCHANGE: u32 = 0x000A;
     const PBT_APMRESUMESUSPEND: u32 = 0x0007;
+    const PBT_APMRESUMEAUTOMATIC: u32 = 0x0012;
     const WM_DWMCOLORIZATIONCOLORCHANGED: u32 = 0x0320;
     const WM_SETTINGCHANGE: u32 = 0x001A;
 
@@ -4470,37 +4504,28 @@ unsafe extern "system" fn display_monitor_proc(
 
     match msg {
         WM_DISPLAYCHANGE => {
-            let now = get_now_ms();
-            let last = LAST_DISPLAY_CHANGE_MS.load(Ordering::Relaxed);
-            if now - last > 500 {
-                LAST_DISPLAY_CHANGE_MS.store(now, Ordering::Relaxed);
-                if let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() {
-                    let ah = app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        reposition_all_windows(&ah);
-                    });
-                }
-            }
+            schedule_reposition(300);
             LRESULT(0)
         }
         WM_POWERBROADCAST => {
             let pw = wparam.0 as u32;
-            if pw == PBT_APMPOWERSTATUSCHANGE || pw == PBT_APMRESUMESUSPEND {
-                let now = get_now_ms();
-                let last = LAST_DISPLAY_CHANGE_MS.load(Ordering::Relaxed);
-                if now - last > 1000 {
-                    LAST_DISPLAY_CHANGE_MS.store(now, Ordering::Relaxed);
-                    if let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() {
-                        let ah = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            // Longer delay for wake from sleep to allow display to fully initialize
-                            let delay = if pw == PBT_APMRESUMESUSPEND { 500 } else { 300 };
-                            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                            reposition_all_windows(&ah);
-                        });
-                    }
+            if pw == PBT_APMRESUMESUSPEND || pw == PBT_APMRESUMEAUTOMATIC {
+                // Displays keep reconfiguring for a while after wake (and lid
+                // open/close on laptops), so check again once they settle.
+                schedule_reposition(500);
+                if let Some(app_handle) = DISPLAY_MONITOR_HANDLE.get() {
+                    let ah = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(2500)).await;
+                        reposition_all_windows(&ah);
+                        // Adapters such as Bluetooth can come back late.
+                        let _ = ah.emit("system-resumed", ());
+                    });
                 }
+            } else if pw == PBT_APMPOWERSTATUSCHANGE && ac_line_changed() {
+                // This also fires on every battery percentage step; only a
+                // plug or unplug can change the layout.
+                schedule_reposition(300);
             }
             LRESULT(0)
         }

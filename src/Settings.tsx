@@ -236,6 +236,8 @@ function SettingsApp() {
 							toggleDockExtrasRecycleBin={settings.toggleDockExtrasRecycleBin}
 							dockTaskView={settings.dockTaskView}
 							toggleDockTaskView={settings.toggleDockTaskView}
+							keepSecondaryTaskbars={settings.keepSecondaryTaskbars}
+							toggleKeepSecondaryTaskbars={settings.toggleKeepSecondaryTaskbars}
 							dockExtrasFolders={settings.dockExtrasFolders}
 							toggleDockExtraFolder={settings.toggleDockExtraFolder}
 							dockExtrasCustomFolders={settings.dockExtrasCustomFolders}
