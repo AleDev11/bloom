@@ -2,6 +2,7 @@
 
 mod battery;
 mod bluetooth;
+mod buds;
 mod commands;
 mod diagnostics;
 mod dock_extras;
