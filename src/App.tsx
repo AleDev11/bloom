@@ -41,7 +41,10 @@ import { BluetoothPanel } from "./components/BluetoothPanel";
 import { DeviceArt, DeviceArtDefs } from "./devices/DeviceArt";
 import { deviceArtFor } from "./devices/deviceArtFor";
 import { deviceLookFor } from "./devices/deviceLooks";
-import { usbArtFor, usbDisplayName, type UsbIdentity } from "./devices/usbArtFor";
+import type { BudLevel, BudsBattery } from "./devices/connectedDevices";
+import { ConnectedDevicesPanel } from "./components/ConnectedDevicesPanel";
+import { useConnectedDevices } from "./hooks/useConnectedDevices";
+import { isWiredAudio, usbArtFor, usbDisplayName, type UsbIdentity } from "./devices/usbArtFor";
 import type { DeviceArtKey } from "./devices/art";
 import {
 	Cpu,
@@ -72,10 +75,15 @@ import {
  *   Dragging files onto the notch also opens the shelf. Wheel/swipe switches
  *   between tool panels, including when a live activity occupies the pill.
  */
-type NotchPanel = "calendar" | "command-center";
-const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center"];
+type NotchPanel = "calendar" | "command-center" | "devices";
+const NOTCH_PANELS: readonly NotchPanel[] = ["calendar", "command-center", "devices"];
 const asNotchPanel = (value: unknown): NotchPanel | null =>
 	NOTCH_PANELS.includes(value as NotchPanel) ? (value as NotchPanel) : null;
+
+// The Connected devices panel grows with its list between these heights;
+// the maximum is the size the panel had before it grew to fit.
+const DEVICES_MIN_HEIGHT = 150;
+const DEVICES_MAX_HEIGHT = 300;
 
 // Pomodoro timer limit.
 const MAX_TIMER_SECONDS = 180 * 60;
@@ -444,21 +452,10 @@ type BloomMode =
 	| "shelf"
 	| "wifi"
 	| "bluetooth"
+	| "devices"
 	| "device";
 
 // A device that just connected or disconnected, shown briefly in the pill.
-interface BudLevel {
-	level: number;
-	charging: boolean;
-}
-
-/** Each bud's and the case's battery, from the backend's `bluetooth-buds`. */
-interface BudsBattery {
-	left: BudLevel | null;
-	right: BudLevel | null;
-	case: BudLevel | null;
-}
-
 interface DeviceAlert {
 	// The device's id, so a later battery report can find its alert.
 	id: string;
@@ -503,9 +500,10 @@ const PLUGGED_ART = new Set<DeviceArtKey>([
 	"webcam",
 	"microphone"
 ]);
-function deviceAlertStatus(art: DeviceArtKey, connected: boolean): string {
+function deviceAlertStatus(art: DeviceArtKey, connected: boolean, wired = false): string {
 	if (art === "sd-card") return connected ? "Inserted" : "Removed";
-	if (PLUGGED_ART.has(art)) return connected ? "Plugged in" : "Unplugged";
+	// A wired device is plugged in whatever it was picked to look like.
+	if (wired || PLUGGED_ART.has(art)) return connected ? "Plugged in" : "Unplugged";
 	return connected ? "Connected" : "Disconnected";
 }
 
@@ -802,6 +800,12 @@ function App() {
 		dismiss: dismissAnnouncement
 	} = useAnnouncement();
 	const [deviceAlert, setDeviceAlert] = useState<DeviceAlert | null>(null);
+	// Each connected earbud's own levels, as last reported, for Connected devices.
+	const [budsById, setBudsById] = useState<Record<string, BudsBattery>>({});
+	// The height the Connected devices panel's content needs; the open notch
+	// follows it up to DEVICES_MAX_HEIGHT, past which the list scrolls.
+	const [devicesContentHeight, setDevicesContentHeight] = useState(DEVICES_MAX_HEIGHT);
+	const devicesPanelHeight = Math.min(DEVICES_MAX_HEIGHT, Math.max(DEVICES_MIN_HEIGHT, devicesContentHeight));
 	// True from an alert appearing until its exit animation has finished, so
 	// the clock row only comes back once the alert has faded out.
 	const [deviceAlertOnScreen, setDeviceAlertOnScreen] = useState(false);
@@ -1054,6 +1058,15 @@ function App() {
 	const [settingsCalendarEnabled, setSettingsCalendarEnabled] = useState(
 		() => localStorage.getItem("bloom-calendar-enabled") !== "false"
 	);
+	// Which panels the notch shows. Calendar and Controls are on by default;
+	// Connected devices (and panels added later) are opt-in.
+	const [settingsControlsPanelEnabled, setSettingsControlsPanelEnabled] = useState(
+		() => localStorage.getItem("bloom-notch-command-center-enabled") !== "false"
+	);
+	const [settingsDevicesPanelEnabled, setSettingsDevicesPanelEnabled] = useState(
+		() => localStorage.getItem("bloom-notch-devices-enabled") === "true"
+	);
+	const connectedDevices = useConnectedDevices(windowLabel === "main" && settingsDevicesPanelEnabled);
 	const [settingsTimerSoundEnabled, setSettingsTimerSoundEnabled] = useState(
 		() => localStorage.getItem("bloom-timer-sound-enabled") !== "false"
 	);
@@ -1127,6 +1140,10 @@ function App() {
 
 				setSettingsWeatherEnabled(getVal("bloom-weather-enabled", "true") !== "false");
 				setSettingsCalendarEnabled(getVal("bloom-calendar-enabled", "true") !== "false");
+				setSettingsControlsPanelEnabled(
+					getVal("bloom-notch-command-center-enabled", "true") !== "false"
+				);
+				setSettingsDevicesPanelEnabled(getVal("bloom-notch-devices-enabled", "false") === "true");
 				setSettingsTimerSoundEnabled(getVal("bloom-timer-sound-enabled", "true") !== "false");
 				setSettingsMusicModeEnabled(getVal("bloom-music-mode-enabled", "true") !== "false");
 				setRememberPanelEnabled(
@@ -1244,6 +1261,8 @@ function App() {
 		{
 			"bloom-weather-enabled": setSettingsWeatherEnabled,
 			"bloom-calendar-enabled": setSettingsCalendarEnabled,
+			"bloom-notch-command-center-enabled": setSettingsControlsPanelEnabled,
+			"bloom-notch-devices-enabled": setSettingsDevicesPanelEnabled,
 			"bloom-timer-sound-enabled": setSettingsTimerSoundEnabled,
 			"bloom-music-mode-enabled": setSettingsMusicModeEnabled,
 			"bloom-notch-remember-panel": setRememberPanelEnabled,
@@ -1637,7 +1656,8 @@ function App() {
 			prev === "status" ||
 			prev === "shelf" ||
 			prev === "wifi" ||
-			prev === "bluetooth"
+			prev === "bluetooth" ||
+			prev === "devices"
 				? restingModeRef.current
 				: prev
 		);
@@ -1889,9 +1909,17 @@ function App() {
 		if (cycleBloomMode(delta > 0 ? 1 : -1)) lastScrollTime.current = now;
 	};
 
-	function panelAvailable(panel: NotchPanel) {
+	function panelEnabled(panel: NotchPanel) {
 		if (panel === "calendar") return settingsCalendarEnabled;
-		return true;
+		if (panel === "command-center") return settingsControlsPanelEnabled;
+		return settingsDevicesPanelEnabled;
+	}
+
+	// Settings keeps at least one panel on; if a hand-edited settings file turns
+	// them all off, Controls stays so the open notch is never empty.
+	function panelAvailable(panel: NotchPanel) {
+		if (!NOTCH_PANELS.some(panelEnabled)) return panel === "command-center";
+		return panelEnabled(panel);
 	}
 
 	// Wheel and swipe navigate panels, even from a collapsed live activity.
@@ -2107,10 +2135,11 @@ function App() {
 	bloomModeRef.current = bloomMode;
 
 	// A click opens the last-used panel when memory is enabled, otherwise the
-	// selected default. The controls panel is always available as a fallback.
+	// selected default. If that panel is turned off, the first one that's on.
 	const openingPanel = (): NotchPanel => {
 		const preferred = rememberPanelEnabled ? lastPanel ?? defaultPanel : defaultPanel;
-		return panelAvailable(preferred) ? preferred : "command-center";
+		if (panelAvailable(preferred)) return preferred;
+		return NOTCH_PANELS.find(panelAvailable) ?? "command-center";
 	};
 
 	// Expands the notch into a panel, or into an activity's own view.
@@ -2155,12 +2184,19 @@ function App() {
 		lastPlayingRef.current = isPlaying;
 	}, [isPlaying, mediaInfo.title, notchMode, triggerEventPeek]);
 
-	// Reset bloom mode when calendar setting is disabled
+	// Leave a panel that has just been turned off in Settings.
 	useEffect(() => {
-		if (!settingsCalendarEnabled && bloomMode === "calendar") {
+		const panel = asNotchPanel(bloomMode);
+		if (panel && !panelAvailable(panel)) {
 			setBloomMode(isOpen ? openingPanel() : collapsedMode);
 		}
-	}, [settingsCalendarEnabled, bloomMode, isOpen]);
+	}, [
+		settingsCalendarEnabled,
+		settingsControlsPanelEnabled,
+		settingsDevicesPanelEnabled,
+		bloomMode,
+		isOpen
+	]);
 
 	// Leave the music view when music is turned off or the player ends its media
 	// session: an open notch falls back to the remembered panel.
@@ -2219,6 +2255,14 @@ function App() {
 				connected: payload.connected,
 				battery: payload.battery
 			});
+			// A disconnected device's bud levels are out of date by its next connect.
+			if (!payload.connected) {
+				setBudsById((all) => {
+					if (!(payload.id in all)) return all;
+					const { [payload.id]: _gone, ...rest } = all;
+					return rest;
+				});
+			}
 		});
 		// Windows often reports a battery level a moment after the device
 		// connects; fill it into the alert if that device is still showing.
@@ -2232,21 +2276,28 @@ function App() {
 		const unlistenBuds = listen<BudsBattery & { id: string }>("bluetooth-buds", ({ payload }) => {
 			const { id, ...buds } = payload;
 			setDeviceAlert((alert) => (alert && alert.id === id && alert.connected ? { ...alert, buds } : alert));
+			setBudsById((all) => ({ ...all, [id]: buds }));
 		});
-		const unlistenUsb = listen<UsbConnection>("usb-connection", ({ payload }) => {
+		// USB devices, and what's plugged into the 3.5 mm jack. A wired audio
+		// device's drawing can be picked in Connected devices.
+		const showWired = ({ payload }: { payload: UsbConnection }) => {
+			const name = usbDisplayName(payload);
 			showDeviceAlert({
 				id: payload.id,
-				art: usbArtFor(payload),
-				name: usbDisplayName(payload),
+				art: (isWiredAudio(payload.class) ? deviceLookFor(name) : null) ?? usbArtFor(payload),
+				name,
 				connected: payload.connected,
 				battery: null,
 				usb: true
 			});
-		});
+		};
+		const unlistenUsb = listen<UsbConnection>("usb-connection", showWired);
+		const unlistenJack = listen<UsbConnection>("wired-audio-connection", showWired);
 		return () => {
 			unlistenConnection.then((f) => f());
 			unlistenBattery.then((f) => f());
 			unlistenUsb.then((f) => f());
+			unlistenJack.then((f) => f());
 			unlistenBuds.then((f) => f());
 		};
 	}, [windowLabel, showDeviceAlert]);
@@ -2990,7 +3041,7 @@ function App() {
 		if (isCalendarMode) return 480;
 		if (bloomMode === "shelf") return 380;
 		if (bloomMode === "command-center" && isOpen) return 350;
-		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 350;
+		if (bloomMode === "wifi" || bloomMode === "bluetooth" || bloomMode === "devices") return 350;
 		if (showMusicOnStatusHover) {
 			return 170 + (settingsVisualizerEnabled ? 30 : 0);
 		}
@@ -3030,6 +3081,9 @@ function App() {
 			return shelfOverflowing ? 190 : 176;
 		}
 		if (bloomMode === "command-center") return isOpen ? 230 : 36;
+		if (bloomMode === "devices") {
+			return devicesPanelHeight;
+		}
 		if (bloomMode === "wifi" || bloomMode === "bluetooth") return 300;
 		if (bloomMode === "status") return 36;
 		if (isMusicMode && isOpen) {
@@ -3784,6 +3838,27 @@ function App() {
 									)}
 								</AnimatePresence>
 
+								{/* Connected devices: everything connected, with its battery, by priority */}
+								<AnimatePresence>
+									{bloomMode === "devices" && (
+										<motion.div
+											key="devices-view"
+											initial={{ opacity: 0 }}
+											animate={{ opacity: 1 }}
+											exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+											transition={{ type: "spring", stiffness: 400, damping: 30 }}
+										>
+											<ConnectedDevicesPanel
+												data={connectedDevices}
+												height={devicesPanelHeight}
+												buds={budsById}
+												lowThreshold={lowBatteryThreshold}
+												onContentHeight={setDevicesContentHeight}
+											/>
+										</motion.div>
+									)}
+								</AnimatePresence>
+
 								{/* Command Center Panel */}
 								<AnimatePresence>
 									{bloomMode === "command-center" && (
@@ -4077,7 +4152,7 @@ function App() {
 											<div className="device-alert-text">
 												<span className="device-alert-name">{deviceAlert.name}</span>
 												<span className="device-alert-status">
-													{deviceAlertStatus(deviceAlert.art, deviceAlert.connected)}
+													{deviceAlertStatus(deviceAlert.art, deviceAlert.connected, deviceAlert.usb)}
 												</span>
 											</div>
 											{deviceAlert.connected && deviceAlert.buds ? (

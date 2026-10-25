@@ -6,6 +6,7 @@ mod buds;
 mod commands;
 mod diagnostics;
 mod dock_extras;
+mod jack;
 mod services;
 mod shelf;
 mod shelf_preview;
@@ -216,7 +217,10 @@ fn main() {
             bluetooth::bluetooth_discovery,
             bluetooth::bluetooth_pair,
             bluetooth::bluetooth_pairing_respond,
-            bluetooth::bluetooth_unpair
+            bluetooth::bluetooth_unpair,
+            bluetooth::bluetooth_refresh_buds,
+            usb::usb_list_devices,
+            jack::jack_list_devices
         ])
         .setup(|app| {
             init_taskbar_marker(app.handle());
@@ -377,6 +381,7 @@ fn main() {
             wifi::setup_wifi_notifications(app.handle().clone());
             bluetooth::setup_bluetooth_notifications(app.handle().clone());
             usb::setup_usb_notifications(app.handle().clone());
+            jack::setup_jack_notifications(app.handle().clone());
 
             // Listen for second-instance signal to open settings
             if let Some(&h_event) = SINGLE_INSTANCE_EVENT_HANDLE.get() {
