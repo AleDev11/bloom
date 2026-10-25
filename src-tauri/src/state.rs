@@ -43,6 +43,10 @@ pub static CURRENT_BRIGHTNESS: AtomicU32 = AtomicU32::new(50);
 pub static CURRENT_VOLUME: AtomicU32 = AtomicU32::new(50);
 pub static LAST_BRIGHTNESS_CHANGE: AtomicI64 = AtomicI64::new(0);
 pub static ANY_MEDIA_PLAYING: AtomicBool = AtomicBool::new(false);
+/// AppUserModelId of the media session the notch is showing. Its controls act
+/// on this session, not on whichever one Windows calls current, so play/pause
+/// never reaches a video in the browser while the notch shows Spotify.
+pub static SHOWN_MEDIA_APP: Mutex<Option<String>> = Mutex::new(None);
 pub static LAST_START_TOGGLE_MS: AtomicI64 = AtomicI64::new(0);
 // Whether the Start menu was open when the left button last went down,
 // recorded by the mouse hook before Start can react to the press.

@@ -2580,9 +2580,9 @@ pub fn open_media_source_app() {
             Ok(m) => m,
             Err(_) => return,
         };
-        let session = match mgr.GetCurrentSession() {
-            Ok(s) => s,
-            Err(_) => return,
+        // Open the app whose media the notch shows, not Windows' current session.
+        let Some(session) = crate::services::shown_media_session(&mgr) else {
+            return;
         };
         let app_id = match session.SourceAppUserModelId() {
             Ok(id) => id.to_string(),
@@ -2913,17 +2913,20 @@ unsafe fn for_each_audio_session<F: FnMut(&windows::Win32::Media::Audio::IAudioS
 }
 
 /// Active windows with an audio session on the default output device,
-/// de-duplicated by process and sorted with currently-playing apps first.
+/// de-duplicated by app (browsers and Electron apps such as Discord play from
+/// several processes of one executable) and sorted with currently-playing
+/// apps first.
 #[tauri::command]
 pub async fn get_audio_sessions() -> Result<Vec<AudioSessionInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| unsafe {
-        use std::collections::HashSet;
+        use std::collections::HashMap;
         use windows::Win32::Media::Audio::{
             AudioSessionStateActive, AudioSessionStateExpired, ISimpleAudioVolume,
         };
 
         let own_pid = std::process::id();
-        let mut seen: HashSet<u32> = HashSet::new();
+        // App key (executable path, or the pid when it can't be read) → index.
+        let mut by_app: HashMap<String, usize> = HashMap::new();
         let mut found: Vec<(AudioSessionInfo, bool)> = Vec::new();
 
         for_each_audio_session(|control| {
@@ -2934,22 +2937,29 @@ pub async fn get_audio_sessions() -> Result<Vec<AudioSessionInfo>, String> {
             let Ok(pid) = control.GetProcessId() else {
                 return;
             };
-            if pid == 0 || pid == own_pid || !seen.insert(pid) {
+            if pid == 0 || pid == own_pid {
                 return;
             }
             let state = control.GetState().unwrap_or_default();
             if state == AudioSessionStateExpired {
-                seen.remove(&pid);
                 return;
             }
             let Ok(volume_ctl) = control.cast::<ISimpleAudioVolume>() else {
                 return;
             };
             let process_path = process_image_path(pid);
+            let key = audio_app_key(pid, process_path.as_deref());
+            let is_active = state == AudioSessionStateActive;
+            if let Some(&index) = by_app.get(&key) {
+                // One tile per app: it counts as playing if any process is.
+                found[index].1 |= is_active;
+                return;
+            }
             let name = match process_path.as_deref() {
                 Some(path) => friendly_process_name(path),
                 None => format!("Process {pid}"),
             };
+            by_app.insert(key, found.len());
             found.push((
                 AudioSessionInfo {
                     pid,
@@ -2958,7 +2968,7 @@ pub async fn get_audio_sessions() -> Result<Vec<AudioSessionInfo>, String> {
                     volume: volume_ctl.GetMasterVolume().unwrap_or(1.0),
                     is_muted: volume_ctl.GetMute().map(|m| m.as_bool()).unwrap_or(false),
                 },
-                state == AudioSessionStateActive,
+                is_active,
             ));
         })?;
 
@@ -2972,21 +2982,130 @@ pub async fn get_audio_sessions() -> Result<Vec<AudioSessionInfo>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The mixer groups audio sessions by executable; a session without a
+/// readable path stands alone under its pid.
+fn audio_app_key(pid: u32, process_path: Option<&str>) -> String {
+    match process_path {
+        Some(path) => path.to_ascii_lowercase(),
+        None => format!("pid:{pid}"),
+    }
+}
+
+/// Calls `f` for every audio session of the app `pid` belongs to, matching the
+/// mixer's one tile per app.
+unsafe fn for_each_app_session(
+    pid: u32,
+    mut f: impl FnMut(&windows::Win32::Media::Audio::ISimpleAudioVolume),
+) -> Result<(), String> {
+    use windows::Win32::Media::Audio::ISimpleAudioVolume;
+    let key = audio_app_key(pid, process_image_path(pid).as_deref());
+    for_each_audio_session(|control| {
+        let Ok(session_pid) = control.GetProcessId() else {
+            return;
+        };
+        if session_pid != pid
+            && audio_app_key(session_pid, process_image_path(session_pid).as_deref()) != key
+        {
+            return;
+        }
+        if let Ok(volume_ctl) = control.cast::<ISimpleAudioVolume>() {
+            f(&volume_ctl);
+        }
+    })
+}
+
 #[tauri::command]
 pub async fn set_app_volume(pid: u32, volume: f32) -> Result<(), String> {
     let volume = volume.clamp(0.0, 1.0);
     tauri::async_runtime::spawn_blocking(move || unsafe {
-        use windows::Win32::Media::Audio::ISimpleAudioVolume;
-
-        for_each_audio_session(|control| {
-            if control.GetProcessId().ok() != Some(pid) {
-                return;
+        for_each_app_session(pid, |volume_ctl| {
+            let _ = volume_ctl.SetMasterVolume(volume, std::ptr::null());
+            if volume > 0.0 {
+                let _ = volume_ctl.SetMute(false, std::ptr::null());
             }
-            if let Ok(volume_ctl) = control.cast::<ISimpleAudioVolume>() {
-                let _ = volume_ctl.SetMasterVolume(volume, std::ptr::null());
-                if volume > 0.0 {
-                    let _ = volume_ctl.SetMute(false, std::ptr::null());
-                }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Whether an audio session's process belongs to a media session's app, so
+/// the music player's slider can change that app's volume instead of the
+/// whole system's. Packaged apps ("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
+/// run from `WindowsApps\<Name>_<Version>_<Arch>__<PublisherId>\`; Win32 players
+/// report their executable ("Spotify.exe", "MSEdge", "Chrome").
+pub(crate) fn media_app_matches_process(app_id: &str, process_path: &str) -> bool {
+    let path = process_path.to_ascii_lowercase();
+    let app = app_id.trim().to_ascii_lowercase();
+    if let Some((family, _)) = app.split_once('!') {
+        return family.rsplit_once('_').is_some_and(|(name, publisher)| {
+            path.contains(&format!("\\{name}_")) && path.contains(&format!("__{publisher}\\"))
+        });
+    }
+    let exe = path.rsplit('\\').next().unwrap_or("");
+    let stem = exe.strip_suffix(".exe").unwrap_or(exe);
+    let app = app.rsplit('\\').next().unwrap_or(&app);
+    let app = app.strip_suffix(".exe").unwrap_or(app);
+    !stem.is_empty() && stem == app
+}
+
+/// Calls `f` with the volume control of every audio session that belongs to
+/// the app the notch's media player shows. Returns whether any matched.
+unsafe fn for_each_media_app_session(
+    mut f: impl FnMut(&windows::Win32::Media::Audio::ISimpleAudioVolume),
+) -> Result<bool, String> {
+    use windows::Win32::Media::Audio::ISimpleAudioVolume;
+    let Some(app_id) = SHOWN_MEDIA_APP.lock().ok().and_then(|g| g.clone()) else {
+        return Ok(false);
+    };
+    let mut matched = false;
+    for_each_audio_session(|control| {
+        let Some(path) = control
+            .GetProcessId()
+            .ok()
+            .and_then(|pid| process_image_path(pid))
+        else {
+            return;
+        };
+        if !media_app_matches_process(&app_id, &path) {
+            return;
+        }
+        if let Ok(volume_ctl) = control.cast::<ISimpleAudioVolume>() {
+            matched = true;
+            f(&volume_ctl);
+        }
+    })?;
+    Ok(matched)
+}
+
+/// The volume of the app the media player shows, or `None` when no audio
+/// session of it can be found (the slider then stays disabled rather than
+/// falling back to the system volume).
+#[tauri::command]
+pub async fn get_media_app_volume() -> Result<Option<f32>, String> {
+    tauri::async_runtime::spawn_blocking(|| unsafe {
+        let mut volume = None;
+        for_each_media_app_session(|volume_ctl| {
+            if volume.is_none() {
+                volume = volume_ctl.GetMasterVolume().ok();
+            }
+        })?;
+        Ok(volume)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Sets the volume of the app the media player shows, on every audio session
+/// it has (browsers open one per tab). Returns whether any session matched.
+#[tauri::command]
+pub async fn set_media_app_volume(volume: f32) -> Result<bool, String> {
+    let volume = volume.clamp(0.0, 1.0);
+    tauri::async_runtime::spawn_blocking(move || unsafe {
+        for_each_media_app_session(|volume_ctl| {
+            let _ = volume_ctl.SetMasterVolume(volume, std::ptr::null());
+            if volume > 0.0 {
+                let _ = volume_ctl.SetMute(false, std::ptr::null());
             }
         })
     })
@@ -2997,15 +3116,8 @@ pub async fn set_app_volume(pid: u32, volume: f32) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_app_mute(pid: u32, muted: bool) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || unsafe {
-        use windows::Win32::Media::Audio::ISimpleAudioVolume;
-
-        for_each_audio_session(|control| {
-            if control.GetProcessId().ok() != Some(pid) {
-                return;
-            }
-            if let Ok(volume_ctl) = control.cast::<ISimpleAudioVolume>() {
-                let _ = volume_ctl.SetMute(muted, std::ptr::null());
-            }
+        for_each_app_session(pid, |volume_ctl| {
+            let _ = volume_ctl.SetMute(muted, std::ptr::null());
         })
     })
     .await
@@ -4058,6 +4170,51 @@ pub fn setup_settings_watcher(app: AppHandle) {
             let _ = CloseHandle(dir_handle);
         }
     });
+}
+
+#[cfg(test)]
+mod media_app_tests {
+    use super::media_app_matches_process;
+
+    #[test]
+    fn matches_win32_players_by_executable() {
+        let spotify = r"C:\Users\me\AppData\Roaming\Spotify\Spotify.exe";
+        assert!(media_app_matches_process("Spotify.exe", spotify));
+        assert!(media_app_matches_process(
+            "MSEdge",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        ));
+        assert!(media_app_matches_process(
+            "Chrome",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+        ));
+        // A different app, or a name that only shares a prefix, is not it.
+        assert!(!media_app_matches_process(
+            "Spotify.exe",
+            r"C:\Windows\explorer.exe"
+        ));
+        assert!(!media_app_matches_process("Spot", spotify));
+        assert!(!media_app_matches_process("", spotify));
+    }
+
+    #[test]
+    fn matches_packaged_apps_by_family() {
+        let store = r"C:\Program Files\WindowsApps\SpotifyAB.SpotifyMusic_1.247.0.0_x64__zpdnekdrzrea0\Spotify.exe";
+        assert!(media_app_matches_process(
+            "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+            store
+        ));
+        // The Win32 Spotify is not the Store package.
+        assert!(!media_app_matches_process(
+            "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+            r"C:\Users\me\AppData\Roaming\Spotify\Spotify.exe"
+        ));
+        // Same name, another publisher.
+        assert!(!media_app_matches_process(
+            "SpotifyAB.SpotifyMusic_otherpublisher!Spotify",
+            store
+        ));
+    }
 }
 
 #[cfg(test)]

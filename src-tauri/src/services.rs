@@ -933,6 +933,36 @@ pub fn setup_audio_visualization(app_handle: AppHandle) {
     });
 }
 
+/// Lower ranks are shown first: playing before paused, then the app the notch
+/// already shows before any other.
+fn media_session_rank(is_playing: bool, already_shown: bool) -> u8 {
+    u8::from(!is_playing) * 2 + u8::from(!already_shown)
+}
+
+/// The media session the notch shows (see `SHOWN_MEDIA_APP`), falling back to
+/// Windows' current session before anything has been shown.
+pub fn shown_media_session(
+    mgr: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager,
+) -> Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession> {
+    let shown = crate::state::SHOWN_MEDIA_APP
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    if let (Some(app_id), Ok(sessions)) = (shown, mgr.GetSessions()) {
+        for i in 0..sessions.Size().unwrap_or(0) {
+            if let Ok(session) = sessions.GetAt(i) {
+                if session
+                    .SourceAppUserModelId()
+                    .is_ok_and(|id| id == app_id.as_str())
+                {
+                    return Some(session);
+                }
+            }
+        }
+    }
+    mgr.GetCurrentSession().ok()
+}
+
 pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
     let (tx, rx) = channel::<SystemCommand>();
     let handle_system = app_handle.clone();
@@ -1051,29 +1081,23 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                         }
                         (SystemCommand::SetVolume(_), None) => {}
                         (SystemCommand::MediaPlayPause, _) => {
-                            if let Some(ref mgr) = manager {
-                                if let Ok(session) = mgr.GetCurrentSession() {
-                                    let _ = session.TryTogglePlayPauseAsync();
-                                }
+                            if let Some(session) = manager.as_ref().and_then(shown_media_session) {
+                                let _ = session.TryTogglePlayPauseAsync();
                             }
                         }
                         (SystemCommand::MediaNext, _) => {
-                            if let Some(ref mgr) = manager {
-                                if let Ok(session) = mgr.GetCurrentSession() {
-                                    let _ = session.TrySkipNextAsync();
-                                }
+                            if let Some(session) = manager.as_ref().and_then(shown_media_session) {
+                                let _ = session.TrySkipNextAsync();
                             }
                         }
                         (SystemCommand::MediaPrevious, _) => {
-                            if let Some(ref mgr) = manager {
-                                if let Ok(session) = mgr.GetCurrentSession() {
-                                    let _ = session.TrySkipPreviousAsync();
-                                }
+                            if let Some(session) = manager.as_ref().and_then(shown_media_session) {
+                                let _ = session.TrySkipPreviousAsync();
                             }
                         }
                         (SystemCommand::MediaSeek(position_ms), _) => {
                             if let Some(ref mgr) = manager {
-                                if let Ok(session) = mgr.GetCurrentSession() {
+                                if let Some(session) = shown_media_session(mgr) {
                                     let ticks = position_ms * 10_000;
                                     let _ = session.TryChangePlaybackPositionAsync(ticks);
                                 }
@@ -1114,8 +1138,18 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                 if last_processed_media.elapsed().as_millis() >= 2000 {
                     last_processed_media = std::time::Instant::now();
                     let mut best_info: Option<MediaInfo> = None;
+                    let mut best_app: Option<String> = None;
                     if let Some(ref mgr) = manager {
                         if let Ok(sessions) = mgr.GetSessions() {
+                            // Rank before reading properties: a playing session beats a
+                            // paused one, and the app already shown beats the rest, so the
+                            // notch doesn't hop between two players and only the shown
+                            // session pays for its properties and artwork.
+                            let previous_app = crate::state::SHOWN_MEDIA_APP
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.clone());
+                            let mut ranked = Vec::new();
                             for i in 0..sessions.Size().unwrap_or(0) {
                                 if let Ok(session) = sessions.GetAt(i) {
                                     let is_playing = session
@@ -1123,6 +1157,21 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
 										.ok()
 										.and_then(|p| p.PlaybackStatus().ok())
 										== Some(GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing);
+                                    let app_id = session
+                                        .SourceAppUserModelId()
+                                        .map(|id| id.to_string())
+                                        .unwrap_or_default();
+                                    let rank = media_session_rank(
+                                        is_playing,
+                                        previous_app.as_deref() == Some(app_id.as_str()),
+                                    );
+                                    ranked.push((rank, session, is_playing, app_id));
+                                }
+                            }
+                            // Stable, so equal ranks keep Windows' order.
+                            ranked.sort_by_key(|(rank, ..)| *rank);
+                            for (_, session, is_playing, app_id) in ranked {
+                                {
                                     if let Ok(props) =
                                         session.TryGetMediaPropertiesAsync().and_then(|op| op.get())
                                     {
@@ -1251,17 +1300,17 @@ pub fn setup_system_worker(app_handle: AppHandle) -> Sender<SystemCommand> {
                                                 seek_enabled,
                                                 position_updated_at: now_ms,
                                             };
-                                            if is_playing {
-                                                best_info = Some(info);
-                                                break;
-                                            } else if best_info.is_none() {
-                                                best_info = Some(info);
-                                            }
+                                            best_info = Some(info);
+                                            best_app = Some(app_id);
+                                            break;
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                    if let Ok(mut shown) = crate::state::SHOWN_MEDIA_APP.lock() {
+                        *shown = best_app;
                     }
                     let current = best_info.unwrap_or(MediaInfo {
                         title: "".into(),
@@ -4564,8 +4613,8 @@ fn recover_from_webview_failure(handle: &AppHandle) {
 mod tests {
     use super::{
         is_helper_name, is_launchable_entry, is_primary_monitor, is_start_menu_process_path,
-        notch_mode_reserves_work_area, pack_cursor, process_exe_name, trim_thumbnail_cache,
-        unpack_cursor, win_number_index,
+        media_session_rank, notch_mode_reserves_work_area, pack_cursor, process_exe_name,
+        trim_thumbnail_cache, unpack_cursor, win_number_index,
     };
 
     #[test]
@@ -4623,6 +4672,19 @@ mod tests {
         assert_eq!(win_number_index(0x30), None);
         assert_eq!(win_number_index(0x41), None);
         assert_eq!(win_number_index(0x61), None);
+    }
+
+    #[test]
+    fn media_sessions_rank_playing_then_already_shown() {
+        let playing_shown = media_session_rank(true, true);
+        let playing_other = media_session_rank(true, false);
+        let paused_shown = media_session_rank(false, true);
+        let paused_other = media_session_rank(false, false);
+        // Two players at once: the notch stays on the one it shows.
+        assert!(playing_shown < playing_other);
+        // Anything playing beats the paused app that was shown.
+        assert!(playing_other < paused_shown);
+        assert!(paused_shown < paused_other);
     }
 
     #[test]

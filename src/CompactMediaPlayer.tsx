@@ -32,7 +32,10 @@ interface CompactMediaPlayerProps {
 	albumArtUrl: string | null;
 	albumArtKey: number;
 	isPlaying: boolean;
+	/** The playing app's own volume, not the system's. */
 	volume: number;
+	/** False when the app's audio session can't be found; the slider is disabled. */
+	volumeAvailable: boolean;
 	volumeExpanded: boolean;
 	onVolumeExpandedChange: (expanded: boolean) => void;
 	onTogglePlayPause: () => void;
@@ -116,6 +119,7 @@ export function CompactMediaPlayer({
 	albumArtKey,
 	isPlaying,
 	volume,
+	volumeAvailable,
 	volumeExpanded,
 	onVolumeExpandedChange,
 	onTogglePlayPause,
@@ -360,7 +364,13 @@ export function CompactMediaPlayer({
 						exit={{ height: 0, opacity: 0 }}
 						transition={{ type: "spring", stiffness: 500, damping: 30 }}
 					>
-						<div className="cmp-volume-row">
+						<div
+							className="cmp-volume-row"
+							style={{ opacity: volumeAvailable ? 1 : 0.4 }}
+							title={
+								volumeAvailable ? t("App volume") : t("This app's volume can't be controlled")
+							}
+						>
 							<VolumeLowIcon size={12} style={{ opacity: 0.5, flexShrink: 0 }} />
 							<div className="cmp-volume-track">
 								<div className="cmp-volume-fill" style={{ width: `${volume * 100}%` }} />
@@ -371,6 +381,7 @@ export function CompactMediaPlayer({
 									max={1}
 									step={0.01}
 									value={volume}
+									disabled={!volumeAvailable}
 									onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
 									onClick={(e) => e.stopPropagation()}
 								/>

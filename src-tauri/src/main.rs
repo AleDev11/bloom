@@ -171,6 +171,8 @@ fn main() {
             set_volume,
             get_audio_sessions,
             set_app_volume,
+            get_media_app_volume,
+            set_media_app_volume,
             set_app_mute,
             set_volume_mixer_rect,
             clear_volume_mixer_rect,

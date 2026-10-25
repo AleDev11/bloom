@@ -143,7 +143,7 @@ body,
 	width: 10px;
 	flex: 1;
 	min-height: 0;
-	background: rgba(255, 255, 255, 0.2);
+	background: color-mix(in srgb, var(--bloom-text, white) 20%, transparent);
 	border-radius: 20px;
 	position: relative;
 	overflow: hidden;
@@ -298,9 +298,15 @@ body,
 	width: 10px;
 	flex: 1;
 	min-height: 48px;
-	background: rgba(255, 255, 255, 0.2);
+	/* Follows the theme's text color so the track shows in light mode too. */
+	background: color-mix(in srgb, var(--bloom-text, white) 20%, transparent);
 	border-radius: 20px;
 	overflow: hidden;
+}
+
+/* A muted app keeps its level visible, dimmed. */
+.volume-mixer-tile.muted .volume-mixer-fill {
+	opacity: 0.35;
 }
 
 .volume-mixer-fill {
@@ -434,7 +440,7 @@ body,
 .brightness-notch-bar {
 	width: 10px;
 	height: 136px;
-	background: rgba(255, 255, 255, 0.2);
+	background: color-mix(in srgb, var(--bloom-text, white) 20%, transparent);
 	border-radius: 20px;
 	position: relative;
 	overflow: hidden;

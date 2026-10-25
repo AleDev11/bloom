@@ -2420,6 +2420,39 @@ function App() {
 		[sendVolume]
 	);
 
+	// The music player's slider changes the playing app's own volume (Spotify,
+	// a browser's player), never the whole system's. Null while no audio
+	// session of that app is found; the slider is disabled then.
+	const [mediaAppVolume, setMediaAppVolume] = useState<number | null>(null);
+	const lastMediaVolumeChangeRef = useRef(0);
+	const refreshMediaAppVolume = useCallback(() => {
+		// A poll landing mid-drag would snap the slider back to a stale level.
+		if (Date.now() - lastMediaVolumeChangeRef.current < 1000) return;
+		invoke<number | null>("get_media_app_volume")
+			.then(setMediaAppVolume)
+			.catch(() => setMediaAppVolume(null));
+	}, []);
+	useEffect(() => {
+		if (bloomMode !== "music") return;
+		refreshMediaAppVolume();
+		// Picks up changes made in the app itself.
+		const interval = setInterval(refreshMediaAppVolume, 2000);
+		return () => clearInterval(interval);
+	}, [bloomMode, mediaInfo.title, refreshMediaAppVolume]);
+
+	const sendMediaAppVolume = useTrailingThrottle((newVol: number) => {
+		invoke("set_media_app_volume", { volume: newVol }).catch(() => {});
+	}, 50);
+
+	const handleMediaVolumeChange = useCallback(
+		(newVol: number) => {
+			lastMediaVolumeChangeRef.current = Date.now();
+			setMediaAppVolume(newVol);
+			sendMediaAppVolume(newVol);
+		},
+		[sendMediaAppVolume]
+	);
+
 	// WiFi toggle
 	const toggleWifi = useCallback(async () => {
 		const previous = wifiStatus;
@@ -3021,11 +3054,12 @@ function App() {
 													albumArtUrl={albumArtUrl}
 													albumArtKey={albumArtKey}
 													isPlaying={isPlaying}
-													volume={displayVolume}
+													volume={mediaAppVolume ?? 0}
+													volumeAvailable={mediaAppVolume !== null}
 													volumeExpanded={compactVolumeExpanded}
 													onVolumeExpandedChange={setCompactVolumeExpanded}
 													onTogglePlayPause={togglePlayPause}
-													onVolumeChange={handleVolumeChange}
+													onVolumeChange={handleMediaVolumeChange}
 													prevFront={prevFront}
 													prevBack={prevBack}
 													nextFront={nextFront}
@@ -3241,7 +3275,15 @@ function App() {
 															</motion.button>
 														</div>
 
-														<div className="volume-slider-container">
+														<div
+															className="volume-slider-container"
+															style={{ opacity: mediaAppVolume === null ? 0.4 : 1 }}
+															title={
+																mediaAppVolume === null
+																	? t("This app's volume can't be controlled")
+																	: t("App volume")
+															}
+														>
 															<VolumeLowIcon size={12} style={{ opacity: 0.5 }} />
 															<div className="slider-track-premium">
 																<input
@@ -3249,15 +3291,16 @@ function App() {
 																	min="0"
 																	max="1"
 																	step="0.01"
-																	value={displayVolume}
-																	onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+																	value={mediaAppVolume ?? 0}
+																	disabled={mediaAppVolume === null}
+																	onChange={(e) => handleMediaVolumeChange(parseFloat(e.target.value))}
 																	onPointerDown={(e) => e.stopPropagation()}
 																	onClick={(e) => e.stopPropagation()}
 																	className="premium-slider"
 																/>
 																<div
 																	className="slider-progress-fill"
-																	style={{ width: `${displayVolume * 100}%` }}
+																	style={{ width: `${(mediaAppVolume ?? 0) * 100}%` }}
 																/>
 															</div>
 															<VolumeHighIcon size={14} style={{ opacity: 0.5 }} />

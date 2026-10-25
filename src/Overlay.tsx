@@ -89,7 +89,8 @@ function MixerTile({
 		};
 	}, [session.process_path, session.name]);
 
-	const percentage = Math.round((session.is_muted ? 0 : session.volume) * 100);
+	// Muted keeps showing the level it returns to; the tile dims instead.
+	const percentage = Math.round(session.volume * 100);
 
 	// Flash the percentage in place of the app logo while its volume changes,
 	// matching the main notch's action button.
@@ -120,12 +121,19 @@ function MixerTile({
 		draggingRef.current = session.pid;
 	};
 
+	// Wheel steps of 5%, like Windows' own volume flyout.
+	const handleWheel = (e: React.WheelEvent) => {
+		const step = e.deltaY < 0 ? 0.05 : -0.05;
+		onVolumeChange(session.pid, Math.max(0, Math.min(1, session.volume + step)));
+	};
+
 	return (
-		<div className="volume-mixer-tile">
+		<div className={`volume-mixer-tile ${session.is_muted ? "muted" : ""}`}>
 			<div
 				ref={barRef}
 				className="volume-mixer-bar"
 				onMouseDown={handleMouseDown}
+				onWheel={handleWheel}
 				onTouchStart={(e) => volumeFromY(e.touches[0].clientY)}
 				title={`${session.name} — ${percentage}%`}
 				style={{ cursor: "pointer" }}
@@ -241,8 +249,17 @@ function VolumeNotch({
 	const refreshSessions = useCallback(() => {
 		invoke<AudioSession[]>("get_audio_sessions")
 			.then((list) => {
-				lastKnownSessions = list;
 				setSessions((prev) => {
+					// The backend lists playing apps first. Keep the order the
+					// panel opened with so tiles don't jump under the cursor;
+					// new apps join at the end.
+					const appKey = (s: AudioSession) => s.process_path ?? `pid:${s.pid}`;
+					const prevOrder = new Map(prev.map((s, i) => [appKey(s), i]));
+					list = [...list].sort(
+						(a, b) =>
+							(prevOrder.get(appKey(a)) ?? Infinity) - (prevOrder.get(appKey(b)) ?? Infinity)
+					);
+					lastKnownSessions = list;
 					const prevByPid = new Map(prev.map((s) => [s.pid, s]));
 					return list.map((session) => {
 						if (draggingRef.current === session.pid) {
