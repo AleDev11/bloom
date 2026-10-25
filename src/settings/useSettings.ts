@@ -151,7 +151,7 @@ export function useSettings() {
 		parseFloat(localStorage.getItem("bloom-scale") || "1.0")
 	);
 	const [themeMode, setThemeMode] = useState(
-		() => localStorage.getItem("bloom-theme-mode") || "dark"
+		() => localStorage.getItem("bloom-theme-mode") || "system"
 	);
 	const [themeColor, setThemeColor] = useState(
 		() => localStorage.getItem("bloom-theme-color") || "#007aff"
@@ -396,7 +396,7 @@ export function useSettings() {
 	// ── Listen for system accent changes (adaptive theme) ──
 	useEffect(() => {
 		const unlisten = listen<string>("system-accent-changed", (event) => {
-			const mode = localStorage.getItem("bloom-theme-mode") || "dark";
+			const mode = localStorage.getItem("bloom-theme-mode") || "system";
 			if (mode === "adaptive") {
 				try {
 					const hsl = hexToHsl(event.payload);

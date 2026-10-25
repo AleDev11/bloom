@@ -190,6 +190,7 @@ fn main() {
             open_battery_saver_settings,
             battery::get_battery_details,
             get_system_accent_color,
+            get_system_theme,
             get_system_locale,
             get_cpu_usage,
             get_ram_usage,

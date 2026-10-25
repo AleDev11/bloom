@@ -4477,6 +4477,10 @@ unsafe extern "system" fn display_monitor_proc(
                     }
                 };
                 let _ = app_handle.emit("system-accent-changed", color_hex);
+                let _ =
+                    app_handle.emit("system-theme-changed", crate::commands::get_windows_theme());
+                // Covers regional-format edits (WM_SETTINGCHANGE "intl").
+                let _ = app_handle.emit("system-locale-changed", crate::utils::windows_locale());
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }

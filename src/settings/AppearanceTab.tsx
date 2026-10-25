@@ -43,16 +43,17 @@ export function AppearanceTab({
 		<>
 			<div className="setting-group-label">{t("Theme")}</div>
 			<div className="setting-group">
-				<SettingRow icon={Palette} label="Theme Mode" desc="Configure visual styling">
+				<SettingRow icon={Palette} label={t("Theme Mode")} desc={t("Configure visual styling")}>
 					<select
 						className="settings-select"
 						value={themeMode}
 						onChange={(e) => handleThemeModeChange(e.target.value)}
 					>
-						<option value="dark">Dark (Translucent)</option>
-						<option value="light">Light (Translucent)</option>
-						<option value="custom">Custom Color</option>
-						<option value="adaptive">Adaptive Accent</option>
+						<option value="system">{t("System (Light/Dark)")}</option>
+						<option value="dark">{t("Dark (Translucent)")}</option>
+						<option value="light">{t("Light (Translucent)")}</option>
+						<option value="custom">{t("Custom Color")}</option>
+						<option value="adaptive">{t("Adaptive Accent")}</option>
 					</select>
 				</SettingRow>
 

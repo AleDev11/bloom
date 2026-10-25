@@ -3679,6 +3679,36 @@ pub fn get_windows_accent_color() -> Option<String> {
     None
 }
 
+/// Windows' "Choose your default Windows mode" setting, which the taskbar and
+/// Start follow (apps follow a separate setting). Missing means light, as on
+/// builds that predate dark mode.
+pub fn get_windows_theme() -> &'static str {
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let mut value = 1u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let _ = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            windows::core::w!("SystemUsesLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut _),
+            Some(&mut size),
+        )
+    };
+    if value == 0 {
+        "dark"
+    } else {
+        "light"
+    }
+}
+
+#[tauri::command]
+pub fn get_system_theme() -> &'static str {
+    get_windows_theme()
+}
+
 #[tauri::command]
 pub fn get_system_locale() -> crate::types::SystemLocale {
     windows_locale()

@@ -131,6 +131,14 @@ export async function applyTheme(
 		brightness = cachedBrightness !== null ? parseFloat(cachedBrightness) : 0.15;
 	}
 
+	// System follows Windows' own light/dark mode, as the taskbar does.
+	if (mode === "system") {
+		const systemTheme = await invoke<string>("get_system_theme").catch(() =>
+			window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+		);
+		return applyTheme(systemTheme, customColor, opacity, saturation, brightness);
+	}
+
 	const op = opacity;
 	const opExpanded = Math.min(1.0, opacity + 0.12);
 
@@ -243,7 +251,7 @@ export async function applyTheme(
 }
 
 export function initTheme() {
-	const syncMode = localStorage.getItem("bloom-theme-mode") || "dark";
+	const syncMode = localStorage.getItem("bloom-theme-mode") || "system";
 	const syncColor = localStorage.getItem("bloom-theme-color") || "#007aff";
 	const syncOpacityVal = localStorage.getItem("bloom-theme-opacity");
 	const syncOpacity = syncOpacityVal !== null ? parseFloat(syncOpacityVal) : 0.8;
@@ -293,7 +301,7 @@ export function initTheme() {
 
 	// Helper: read all theme values from localStorage and apply
 	const applyThemeFromStorage = () => {
-		const mode = localStorage.getItem("bloom-theme-mode") || "dark";
+		const mode = localStorage.getItem("bloom-theme-mode") || "system";
 		const color = localStorage.getItem("bloom-theme-color") || "#007aff";
 		const opacity = parseFloat(localStorage.getItem("bloom-theme-opacity") || "0.80");
 		const saturation = parseFloat(localStorage.getItem("bloom-theme-saturation") || "0.50");
@@ -320,12 +328,18 @@ export function initTheme() {
 
 	// Listen to system accent color updates in case of adaptive theme
 	const accentPromise = listen<string>("system-accent-changed", (event) => {
-		const currentMode = localStorage.getItem("bloom-theme-mode") || "dark";
+		const currentMode = localStorage.getItem("bloom-theme-mode") || "system";
 		if (currentMode === "adaptive") {
 			const opacity = parseFloat(localStorage.getItem("bloom-theme-opacity") || "0.80");
 			const saturation = parseFloat(localStorage.getItem("bloom-theme-saturation") || "0.50");
 			const brightness = parseFloat(localStorage.getItem("bloom-theme-brightness") || "0.15");
 			applyTheme("adaptive", event.payload, opacity, saturation, brightness);
+		}
+	});
+
+	const systemThemePromise = listen<string>("system-theme-changed", () => {
+		if ((localStorage.getItem("bloom-theme-mode") || "system") === "system") {
+			applyThemeFromStorage();
 		}
 	});
 
@@ -344,6 +358,7 @@ export function initTheme() {
 	return () => {
 		settingsPromise.then((f) => f());
 		accentPromise.then((f) => f());
+		systemThemePromise.then((f) => f());
 		externalPromise.then((f) => f());
 	};
 }
