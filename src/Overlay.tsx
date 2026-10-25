@@ -13,6 +13,7 @@ import "./Overlay.css";
 import { EdgeSurface } from "./components/EdgeSurface";
 import { initTheme } from "./theme";
 import { createRegionSender, measureElements, type RegionRect } from "./windowRegion";
+import { t, useLanguage } from "./i18n";
 
 // ─── App Volume Mixer ───────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ function MixerTile({
 	onMuteToggle: (pid: number) => void;
 	draggingRef: { current: number | null };
 }) {
+	useLanguage();
 	const [icon, setIcon] = useState<string | null>(null);
 	const [showPercentage, setShowPercentage] = useState(false);
 	const barRef = useRef<HTMLDivElement>(null);
@@ -140,7 +142,7 @@ function MixerTile({
 					showPercentage ? "showing-percent" : ""
 				}`}
 				onClick={() => onMuteToggle(session.pid)}
-				title={session.is_muted ? "Unmute" : "Mute"}
+				title={session.is_muted ? t("Unmute") : t("Mute")}
 			>
 				{icon ? (
 					<img src={icon} alt="" draggable={false} />
@@ -192,6 +194,7 @@ function VolumeNotch({
 	mixerExpanded: boolean;
 	onMixerExpandedChange: (expanded: boolean) => void;
 }) {
+	useLanguage();
 	const percentage = Math.round(volume * 100);
 	const barRef = useRef<HTMLDivElement>(null);
 	const shellRef = useRef<HTMLDivElement>(null);
@@ -435,7 +438,7 @@ function VolumeNotch({
 							e.stopPropagation();
 							onMixerExpandedChange(!mixerExpanded);
 						}}
-						title="App volume mixer"
+						title={t("App volume mixer")}
 					>
 						<span className="volume-notch-action-icon">
 							<SpeakerIcon size={16} muted={isMuted} />
@@ -470,10 +473,10 @@ function VolumeNotch({
 								{sessions.length === 0 ? (
 									<div className="volume-mixer-empty">
 										{!sessionsLoaded
-											? "Loading..."
+											? t("Loading...")
 											: sessionsError
-												? "Couldn't read audio sessions"
-												: "No apps with audio"}
+												? t("Couldn't read audio sessions")
+												: t("No apps with audio")}
 									</div>
 								) : (
 									sessions.map((session) => (
@@ -595,6 +598,7 @@ function BrightnessNotch({
 // ─── Main Overlay Component ─────────────────────────────────────────────────
 
 function OverlayApp() {
+	useLanguage();
 	useEffect(() => {
 		return initTheme();
 	}, []);
@@ -1007,9 +1011,9 @@ function OverlayApp() {
 					>
 						<img src="/bloom.png" className="update-splash-logo" alt="Bloom" />
 						<p className="update-splash-text">
-							{updateStatus === "checking" && "Checking for updates..."}
-							{updateStatus === "downloading" && `Downloading update... ${updateProgress}%`}
-							{updateStatus === "installing" && "Installing update..."}
+							{updateStatus === "checking" && t("Checking for updates...")}
+							{updateStatus === "downloading" && t("Downloading update... {progress}%", { progress: updateProgress })}
+							{updateStatus === "installing" && t("Installing update...")}
 						</p>
 						{updateStatus === "downloading" && (
 							<div className="update-progress-bar">

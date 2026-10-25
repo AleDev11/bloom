@@ -128,7 +128,8 @@ Example:
 | `bloom-auto-update`            | `"true"` / `"false"` | `"false"` | Check for and download updates automatically on startup.                                             |
 | `bloom-show-update-indicator`  | `"true"` / `"false"` | `"true"`  | Show a green dot on the notch when an update is available.                                           |
 | `bloom-announcement-dismissed` | announcement id      | `""`      | ID of the last dismissed in-app announcement (published via `website/public/announcements.json`).    |
-| `bloom-time-format-24h`        | `"true"` / `"false"` | `"false"` | Use 24-hour clock format in the notch. When `"false"`, displays 12-hour format with AM/PM.           |
+| `bloom-time-format-24h`        | `"system"` / `"true"` / `"false"` | `"system"` | Clock format in the notch. **system** follows the short-time pattern of Windows' regional format, live. `"true"` = 24-hour, `"false"` = 12-hour with AM/PM. |
+| `bloom-language`               | `"system"` / `"en"` / `"es"` | `"system"` | Interface language. **system** follows the Windows display language (Spanish → `es`, anything else → `en`). Webviews switch live; the tray menu switches on restart. |
 
 ### Internal (Do Not Edit Manually)
 

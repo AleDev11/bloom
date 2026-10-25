@@ -3645,6 +3645,11 @@ pub fn get_windows_accent_color() -> Option<String> {
 }
 
 #[tauri::command]
+pub fn get_system_locale() -> crate::types::SystemLocale {
+    windows_locale()
+}
+
+#[tauri::command]
 pub fn get_system_accent_color() -> Result<String, String> {
     // Try reading registry first for exact Windows accent color
     if let Some(color) = get_windows_accent_color() {

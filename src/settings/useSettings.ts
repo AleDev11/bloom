@@ -15,6 +15,7 @@ import {
 	DEFAULT_ENABLED_FOLDERS
 } from "../dockExtras";
 import type { WidgetConfig } from "./types";
+import { t } from "../i18n";
 
 function readBool(val: string | null): boolean {
 	return val === "true";
@@ -66,8 +67,12 @@ export function useSettings() {
 	const [showUpdateIndicator, setShowUpdateIndicator] = useState(
 		() => localStorage.getItem("bloom-show-update-indicator") !== "false"
 	);
-	const [timeFormat24h, setTimeFormat24h] = useState(
-		() => localStorage.getItem("bloom-time-format-24h") === "true"
+	// "system", "true" (24-hour) or "false" (12-hour).
+	const [timeFormat, setTimeFormat] = useState(
+		() => localStorage.getItem("bloom-time-format-24h") || "system"
+	);
+	const [language, setLanguage] = useState(
+		() => localStorage.getItem("bloom-language") || "system"
 	);
 	const [tempUnitFahrenheit, setTempUnitFahrenheit] = useState(false);
 	const [cityName, setCityName] = useState("");
@@ -204,7 +209,7 @@ export function useSettings() {
 			apply(getVal("bloom-media-ambience-enabled"), setMediaAmbienceEnabled, readBool);
 			apply(getVal("bloom-media-compact-glow-enabled"), setMediaCompactGlowEnabled, readBool);
 			apply(getVal("bloom-corners-enabled"), setCornersEnabled, readBool);
-			apply(getVal("bloom-time-format-24h"), setTimeFormat24h, readBool);
+			apply(getVal("bloom-time-format-24h"), setTimeFormat, (v) => v);
 			apply(getVal("bloom-show-update-indicator"), setShowUpdateIndicator, readBool);
 			apply(getVal("bloom-auto-update"), setAutoUpdate, readBool);
 			apply(getVal("bloom-volume-edge-enabled"), setVolumeEdgeEnabled, readBool);
@@ -228,6 +233,7 @@ export function useSettings() {
 			apply(getVal("bloom-scale"), setScale, parseFloat);
 			apply(getVal("bloom-low-battery-threshold"), setLowBatteryThreshold, parseInt);
 
+			apply(getVal("bloom-language"), setLanguage, (v) => v);
 			apply(getVal("bloom-notch-mode"), setNotchMode, (v) => (v === "auto-hide" ? "smart" : v));
 			apply(getVal("bloom-notch-edge-delay"), setNotchEdgeDelay, parseInt);
 			apply(getVal("bloom-dock-mode"), setDockMode, (v) => (v === "auto-hide" ? "smart" : v));
@@ -338,6 +344,7 @@ export function useSettings() {
 
 	// ── Sync settings from other windows ──
 	useSettingsSync({
+		"bloom-language": setLanguage,
 		"bloom-dock-mode": setDockMode,
 		"bloom-dock-edge-delay": setDockEdgeDelay,
 		"bloom-notch-mode": setNotchMode,
@@ -369,7 +376,7 @@ export function useSettings() {
 		"bloom-media-layout": setMediaLayout,
 		"bloom-corners-enabled": setCornersEnabled,
 		"bloom-show-update-indicator": setShowUpdateIndicator,
-		"bloom-time-format-24h": setTimeFormat24h,
+		"bloom-time-format-24h": (v) => setTimeFormat(String(v)),
 		"bloom-low-battery-threshold": setLowBatteryThreshold,
 		"bloom-scale": setScale,
 		"bloom-temp-unit": (v) => setTempUnitFahrenheit(v === "fahrenheit"),
@@ -608,10 +615,14 @@ export function useSettings() {
 		saveSetting("bloom-show-update-indicator", String(next));
 	};
 
-	const toggleTimeFormat24h = () => {
-		const next = !timeFormat24h;
-		setTimeFormat24h(next);
-		saveSetting("bloom-time-format-24h", String(next));
+	const handleTimeFormatChange = (value: string) => {
+		setTimeFormat(value);
+		saveSetting("bloom-time-format-24h", value);
+	};
+
+	const handleLanguageChange = (value: string) => {
+		setLanguage(value);
+		saveSetting("bloom-language", value);
 	};
 
 	const toggleTempUnit = () => {
@@ -700,7 +711,7 @@ export function useSettings() {
 		try {
 			const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
 			const selected = await openDialog({
-				title: "Add a folder to the dock",
+				title: t("Add a folder to the dock"),
 				directory: true,
 				multiple: false
 			});
@@ -844,12 +855,14 @@ export function useSettings() {
 		try {
 			const { ask } = await import("@tauri-apps/plugin-dialog");
 			const confirmed = await ask(
-				"All settings return to their defaults and Bloom restarts. Pinned apps and custom icons are kept.",
+				t(
+					"All settings return to their defaults and Bloom restarts. Pinned apps and custom icons are kept."
+				),
 				{
-					title: "Reset Bloom to Defaults",
+					title: t("Reset Bloom to Defaults"),
 					kind: "warning",
-					okLabel: "Reset and Restart",
-					cancelLabel: "Cancel"
+					okLabel: t("Reset and Restart"),
+					cancelLabel: t("Cancel")
 				}
 			);
 			if (!confirmed) return;
@@ -920,8 +933,10 @@ export function useSettings() {
 		toggleAutoUpdate,
 		lowBatteryThreshold,
 		handleThresholdChange,
-		timeFormat24h,
-		toggleTimeFormat24h,
+		timeFormat,
+		handleTimeFormatChange,
+		language,
+		handleLanguageChange,
 		showUpdateIndicator,
 		toggleUpdateIndicator,
 		scale,

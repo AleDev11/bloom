@@ -13,6 +13,7 @@ import {
 	VolumeLowIcon,
 	VolumeHighIcon
 } from "./icons";
+import { t, useLanguage } from "./i18n";
 
 interface MediaInfo {
 	title: string;
@@ -127,6 +128,7 @@ export function CompactMediaPlayer({
 	onAnimateNext,
 	onLayoutChange
 }: CompactMediaPlayerProps) {
+	useLanguage();
 	const seekRef = useRef<HTMLInputElement>(null);
 
 	const positionMs = mediaInfo.position_ms ?? 0;
@@ -203,7 +205,7 @@ export function CompactMediaPlayer({
 							<motion.img
 								key={`art-${albumArtKey}`}
 								src={albumArtUrl}
-								alt="Art"
+								alt={t("Art")}
 								draggable={false}
 								initial={{ rotateY: 90, opacity: 0 }}
 								animate={{ rotateY: 0, opacity: 1 }}
@@ -270,7 +272,7 @@ export function CompactMediaPlayer({
 						onVolumeExpandedChange(!volumeExpanded);
 					}}
 					whileTap={{ scale: 0.9 }}
-					title="Volume"
+					title={t("Volume")}
 				>
 					<SpeakerIcon size={22} muted={volume === 0} />
 				</motion.button>
@@ -342,7 +344,7 @@ export function CompactMediaPlayer({
 						invoke("open_sound_settings").catch(() => {});
 					}}
 					whileTap={{ scale: 0.9 }}
-					title="Audio Output"
+					title={t("Audio Output")}
 				>
 					<HeadphonesIcon size={22} />
 				</motion.button>

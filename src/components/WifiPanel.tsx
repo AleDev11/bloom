@@ -13,6 +13,7 @@ import {
 	WifiZero
 } from "lucide-react";
 import "./QuickPanel.css";
+import { t, tc, useLanguage } from "../i18n";
 
 interface WifiNetwork {
 	ssid: string;
@@ -58,6 +59,7 @@ interface WifiPanelProps {
 }
 
 export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelProps) {
+	useLanguage();
 	const [list, setList] = useState<WifiNetworkList | null>(null);
 	const [scanning, setScanning] = useState(false);
 	const [selected, setSelected] = useState<string | null>(null);
@@ -172,10 +174,10 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 	};
 
 	const statusText = (n: WifiNetwork) => {
-		if (busy === n.ssid) return "Connecting…";
-		if (n.connected) return "Connected";
-		if (n.saved) return "Saved";
-		return n.security === "open" ? "Open" : "Secured";
+		if (busy === n.ssid) return t("Connecting…");
+		if (n.connected) return t("Connected");
+		if (n.saved) return t("Saved");
+		return n.security === "open" ? tc("wifi", "Open") : t("Secured");
 	};
 
 	const renderActions = (n: WifiNetwork) => {
@@ -186,9 +188,9 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 		if (handledByWindows) {
 			return (
 				<div className="qp-row-actions">
-					<span className="qp-note">This network needs a sign-in Windows handles.</span>
+					<span className="qp-note">{t("This network needs a sign-in Windows handles.")}</span>
 					<button className="qp-btn" onClick={() => invoke("wifi_open_settings", { page: "wifi" })}>
-						Open Settings
+						{t("Open Settings")}
 					</button>
 				</div>
 			);
@@ -200,7 +202,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 					<input
 						className="qp-input"
 						type="password"
-						placeholder="Password"
+						placeholder={t("Password")}
 						autoFocus
 						value={password}
 						disabled={isBusy}
@@ -217,7 +219,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 				<div className="qp-btn-row">
 					{n.connected ? (
 						<button className="qp-btn" onClick={disconnect}>
-							Disconnect
+							{t("Disconnect")}
 						</button>
 					) : (
 						<button
@@ -225,12 +227,12 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 							disabled={isBusy || (needsPassword && !password)}
 							onClick={() => void connect(n, needsPassword)}
 						>
-							{isBusy ? <LoaderCircle className="qp-spin" /> : "Connect"}
+							{isBusy ? <LoaderCircle className="qp-spin" /> : t("Connect")}
 						</button>
 					)}
 					{n.saved && (
 						<button className="qp-btn" disabled={isBusy} onClick={() => void forget(n)}>
-							Forget
+							{t("Forget")}
 						</button>
 					)}
 				</div>
@@ -239,17 +241,17 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 	};
 
 	const renderBody = () => {
-		if (!enabled) return <div className="qp-empty">Wi-Fi is off</div>;
+		if (!enabled) return <div className="qp-empty">{t("Wi-Fi is off")}</div>;
 		if (list?.location_denied) {
 			return (
 				<div className="qp-empty">
 					<MapPin />
-					<span>Windows only lists Wi-Fi networks for apps with location access.</span>
+					<span>{t("Windows only lists Wi-Fi networks for apps with location access.")}</span>
 					<button
 						className="qp-btn"
 						onClick={() => invoke("wifi_open_settings", { page: "location" })}
 					>
-						Location settings
+						{t("Location settings")}
 					</button>
 				</div>
 			);
@@ -263,7 +265,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 		}
 		if (list.networks.length === 0) {
 			return (
-				<div className="qp-empty">{scanning ? "Looking for networks…" : "No networks found"}</div>
+				<div className="qp-empty">{scanning ? t("Looking for networks…") : t("No networks found")}</div>
 			);
 		}
 		return (
@@ -290,7 +292,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 								{n.security !== "open" && <Lock className="qp-row-badge" />}
 							</button>
 							{expanded && renderActions(n)}
-							{error?.ssid === n.ssid && <div className="qp-error">{error.text}</div>}
+							{error?.ssid === n.ssid && <div className="qp-error">{t(error.text)}</div>}
 						</li>
 					);
 				})}
@@ -301,7 +303,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 	return (
 		<div className="qp" onClick={(e) => e.stopPropagation()}>
 			<div className="qp-header">
-				<button className="qp-icon-btn" onClick={onBack} aria-label="Back to controls">
+				<button className="qp-icon-btn" onClick={onBack} aria-label={t("Back to controls")}>
 					<ChevronLeft />
 				</button>
 				<span className="qp-title">Wi-Fi</span>
@@ -309,7 +311,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 					className="qp-icon-btn"
 					onClick={() => void scan()}
 					disabled={!enabled || scanning}
-					aria-label="Scan for networks"
+					aria-label={t("Scan for networks")}
 				>
 					<RefreshCw className={scanning ? "qp-spin" : ""} />
 				</button>
@@ -325,7 +327,7 @@ export function WifiPanel({ enabled, onToggle, onBack, onPinChange }: WifiPanelP
 			</div>
 			<div className="qp-body">{renderBody()}</div>
 			<button className="qp-footer" onClick={() => invoke("wifi_open_settings", { page: "wifi" })}>
-				More Wi-Fi settings
+				{t("More Wi-Fi settings")}
 			</button>
 		</div>
 	);

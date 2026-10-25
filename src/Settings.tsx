@@ -17,6 +17,7 @@ import {
 import type { SettingsTab } from "./settings/index";
 import { useAnnouncement } from "./hooks/useAnnouncement";
 import { initTheme } from "./theme";
+import { t, useLanguage } from "./i18n";
 import "./Settings.css";
 
 const appWindow = getCurrentWebviewWindow();
@@ -32,6 +33,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 
 function SettingsApp() {
 	const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+	useLanguage();
 	const settings = useSettings();
 	const { announcement, dismissed, dismiss } = useAnnouncement();
 
@@ -74,9 +76,9 @@ function SettingsApp() {
 		<div className="settings-container" style={{ zoom: settings.scale }}>
 			<div className="title-bar" data-tauri-drag-region>
 				<span className="title-text" data-tauri-drag-region>
-					Settings
+					{t("Settings")}
 				</span>
-				<button className="close-btn" onClick={handleClose} title="Close Settings">
+				<button className="close-btn" onClick={handleClose} title={t("Close Settings")}>
 					<X size={12} strokeWidth={1.5} className="close-btn-icon" />
 				</button>
 			</div>
@@ -92,7 +94,7 @@ function SettingsApp() {
 							<div className="sidebar-tab-icon">
 								<Icon size={14} strokeWidth={1.5} />
 							</div>
-							<span>{label}</span>
+							<span>{t(label)}</span>
 						</button>
 					))}
 				</div>
@@ -100,8 +102,10 @@ function SettingsApp() {
 				<div className="settings-content">
 					{settings.saveError && (
 						<div className="settings-save-error" role="alert">
-							<span>Changes could not be saved. Your saved settings have been restored.</span>
-							<button onClick={settings.dismissSaveError} aria-label="Dismiss save error">
+							<span>
+								{t("Changes could not be saved. Your saved settings have been restored.")}
+							</span>
+							<button onClick={settings.dismissSaveError} aria-label={t("Dismiss save error")}>
 								<X size={14} strokeWidth={2} />
 							</button>
 						</div>
@@ -120,10 +124,10 @@ function SettingsApp() {
 									className="announcement-banner-link"
 									onClick={() => openUrl(announcement.url!)}
 								>
-									Learn more
+									{t("Learn more")}
 								</button>
 							)}
-							<button className="announcement-banner-close" onClick={dismiss} title="Dismiss">
+							<button className="announcement-banner-close" onClick={dismiss} title={t("Dismiss")}>
 								<X size={12} strokeWidth={2.2} />
 							</button>
 						</div>
@@ -132,8 +136,10 @@ function SettingsApp() {
 						<GeneralTab
 							autostart={settings.autostart}
 							toggleAutostart={settings.toggleAutostart}
-							timeFormat24h={settings.timeFormat24h}
-							toggleTimeFormat24h={settings.toggleTimeFormat24h}
+							timeFormat={settings.timeFormat}
+							handleTimeFormatChange={settings.handleTimeFormatChange}
+							language={settings.language}
+							handleLanguageChange={settings.handleLanguageChange}
 							showUpdateIndicator={settings.showUpdateIndicator}
 							toggleUpdateIndicator={settings.toggleUpdateIndicator}
 							lowBatteryThreshold={settings.lowBatteryThreshold}

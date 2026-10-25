@@ -10,13 +10,27 @@ export interface BatteryDetails {
 	power_mode: string | null;
 }
 
+/**
+ * Translates an English string, like `t` from ./i18n. Passed in rather than
+ * imported so this file stays free of the webview-only i18n module (and
+ * testable under Bun); the default leaves the English text as is.
+ */
+export type Translate = (text: string, vars?: Record<string, string | number>) => string;
+
+const english: Translate = (text, vars) =>
+	vars
+		? text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match))
+		: text;
+
 /** Durations as the taskbar writes them: "3 hr 12 min", "45 min", "1 hr". */
-export function formatDuration(seconds: number): string {
+export function formatDuration(seconds: number, t: Translate = english): string {
 	const minutes = Math.max(1, Math.round(seconds / 60));
 	const hours = Math.floor(minutes / 60);
 	const rest = minutes % 60;
-	if (hours === 0) return `${rest} min`;
-	return rest === 0 ? `${hours} hr` : `${hours} hr ${rest} min`;
+	if (hours === 0) return t("{minutes} min", { minutes: rest });
+	return rest === 0
+		? t("{hours} hr", { hours })
+		: t("{hours} hr {minutes} min", { hours, minutes: rest });
 }
 
 /**
@@ -28,7 +42,8 @@ export function formatDuration(seconds: number): string {
 export function batteryTooltip(
 	details: BatteryDetails | null,
 	fallback: { level: number; charging: boolean },
-	energySaver: boolean
+	energySaver: boolean,
+	t: Translate = english
 ): string {
 	const percent = details?.percent ?? fallback.level;
 	const charging = details ? details.charging : fallback.charging;
@@ -36,22 +51,36 @@ export function batteryTooltip(
 	const lines: string[] = [];
 
 	if (pluggedIn && percent >= 100 && !charging) {
-		lines.push(`Fully charged (${percent}%)`);
+		lines.push(t("Fully charged ({percent}%)", { percent }));
 	} else if (pluggedIn) {
-		lines.push(`${percent}% available (plugged in${charging ? ", charging" : ", not charging"})`);
+		lines.push(
+			charging
+				? t("{percent}% available (plugged in, charging)", { percent })
+				: t("{percent}% available (plugged in, not charging)", { percent })
+		);
 	} else if (details?.seconds_left) {
-		lines.push(`${formatDuration(details.seconds_left)} (${percent}%) remaining`);
+		lines.push(
+			t("{duration} ({percent}%) remaining", {
+				duration: formatDuration(details.seconds_left, t),
+				percent
+			})
+		);
 	} else {
-		lines.push(`${percent}% remaining`);
+		lines.push(t("{percent}% remaining", { percent }));
 	}
 
 	if (charging && details?.seconds_to_full) {
-		lines.push(`About ${formatDuration(details.seconds_to_full)} until full`);
+		lines.push(
+			t("About {duration} until full", { duration: formatDuration(details.seconds_to_full, t) })
+		);
 	}
-	if (details?.power_mode) lines.push(`Power mode: ${details.power_mode}`);
-	if (energySaver) lines.push("Energy saver is on");
+	// The backend names the power mode in English, as Windows' settings do.
+	if (details?.power_mode) lines.push(t("Power mode: {mode}", { mode: t(details.power_mode) }));
+	if (energySaver) lines.push(t("Energy saver is on"));
 	if (details?.health_percent != null) {
-		lines.push(`Battery health: ${details.health_percent}% of original capacity`);
+		lines.push(
+			t("Battery health: {percent}% of original capacity", { percent: details.health_percent })
+		);
 	}
 	return lines.join("\n");
 }

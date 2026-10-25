@@ -1,11 +1,23 @@
-import { Power, Download, Clock, BatteryWarning, RefreshCw, RotateCcw, LogOut } from "lucide-react";
+import {
+	Power,
+	Download,
+	Clock,
+	BatteryWarning,
+	RefreshCw,
+	RotateCcw,
+	LogOut,
+	Languages
+} from "lucide-react";
 import { SettingRow } from "./SettingRow";
+import { LANGUAGES, t, useLanguage } from "../i18n";
 
 interface GeneralTabProps {
 	autostart: boolean;
 	toggleAutostart: () => void;
-	timeFormat24h: boolean;
-	toggleTimeFormat24h: () => void;
+	timeFormat: string;
+	handleTimeFormatChange: (value: string) => void;
+	language: string;
+	handleLanguageChange: (value: string) => void;
 	showUpdateIndicator: boolean;
 	toggleUpdateIndicator: () => void;
 	lowBatteryThreshold: number;
@@ -18,8 +30,10 @@ interface GeneralTabProps {
 export function GeneralTab({
 	autostart,
 	toggleAutostart,
-	timeFormat24h,
-	toggleTimeFormat24h,
+	timeFormat,
+	handleTimeFormatChange,
+	language,
+	handleLanguageChange,
 	showUpdateIndicator,
 	toggleUpdateIndicator,
 	lowBatteryThreshold,
@@ -28,11 +42,26 @@ export function GeneralTab({
 	resetToDefaults,
 	quitBloom
 }: GeneralTabProps) {
+	useLanguage();
 	return (
 		<>
-			<div className="setting-group-label">System</div>
+			<div className="setting-group-label">{t("System")}</div>
 			<div className="setting-group">
-				<SettingRow icon={Power} label="Launch at Login" desc="Open Bloom automatically">
+				<SettingRow icon={Languages} label={t("Language")} desc={t("Interface language")}>
+					<select
+						className="settings-select"
+						value={language}
+						onChange={(e) => handleLanguageChange(e.target.value)}
+					>
+						{LANGUAGES.map((option) => (
+							<option key={option.value} value={option.value}>
+								{option.value === "system" ? t(option.label) : option.label}
+							</option>
+						))}
+					</select>
+				</SettingRow>
+
+				<SettingRow icon={Power} label={t("Launch at Login")} desc={t("Open Bloom automatically")}>
 					<label className="toggle-switch">
 						<input type="checkbox" checked={autostart} onChange={toggleAutostart} />
 						<span className="slider"></span>
@@ -41,8 +70,8 @@ export function GeneralTab({
 
 				<SettingRow
 					icon={Download}
-					label="Update Indicator"
-					desc="Show green dot when update available"
+					label={t("Update Indicator")}
+					desc={t("Show green dot when update available")}
 				>
 					<label className="toggle-switch">
 						<input type="checkbox" checked={showUpdateIndicator} onChange={toggleUpdateIndicator} />
@@ -50,17 +79,26 @@ export function GeneralTab({
 					</label>
 				</SettingRow>
 
-				<SettingRow icon={Clock} label="24-Hour Time" desc="Use 24-hour clock format">
-					<label className="toggle-switch">
-						<input type="checkbox" checked={timeFormat24h} onChange={toggleTimeFormat24h} />
-						<span className="slider"></span>
-					</label>
+				<SettingRow
+					icon={Clock}
+					label={t("Clock Format")}
+					desc={t("System follows Windows' regional format")}
+				>
+					<select
+						className="settings-select"
+						value={timeFormat}
+						onChange={(e) => handleTimeFormatChange(e.target.value)}
+					>
+						<option value="system">{t("System")}</option>
+						<option value="false">{t("12-hour")}</option>
+						<option value="true">{t("24-hour")}</option>
+					</select>
 				</SettingRow>
 
 				<SettingRow
 					icon={BatteryWarning}
-					label="Low Battery Alert"
-					desc={`Trigger at ${lowBatteryThreshold}%`}
+					label={t("Low Battery Alert")}
+					desc={t("Trigger at {percent}%", { percent: lowBatteryThreshold })}
 					divider={false}
 				>
 					<input
@@ -75,27 +113,27 @@ export function GeneralTab({
 				</SettingRow>
 			</div>
 
-			<div className="setting-group-label">App</div>
+			<div className="setting-group-label">{t("App")}</div>
 			<div className="setting-group">
 				<SettingRow
 					icon={RotateCcw}
-					label="Reset to Defaults"
-					desc="Restore all settings and restart Bloom"
+					label={t("Reset to Defaults")}
+					desc={t("Restore all settings and restart Bloom")}
 					action
 					danger
 					onClick={resetToDefaults}
 				/>
 				<SettingRow
 					icon={RefreshCw}
-					label="Restart Bloom"
-					desc="Reinitialize all components"
+					label={t("Restart Bloom")}
+					desc={t("Reinitialize all components")}
 					action
 					onClick={restartBloom}
 				/>
 				<SettingRow
 					icon={LogOut}
-					label="Quit Bloom"
-					desc="Exit application completely"
+					label={t("Quit Bloom")}
+					desc={t("Exit application completely")}
 					action
 					danger
 					onClick={quitBloom}

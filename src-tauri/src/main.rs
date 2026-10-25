@@ -189,6 +189,7 @@ fn main() {
             open_battery_saver_settings,
             battery::get_battery_details,
             get_system_accent_color,
+            get_system_locale,
             get_cpu_usage,
             get_ram_usage,
             get_disk_space,
@@ -409,11 +410,18 @@ fn main() {
             {
                 use tauri::menu::{Menu, MenuItem};
                 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-                let quit_item = MenuItem::with_id(app, "quit", "Quit Bloom", true, None::<&str>)?;
+                // Built once at startup, so a language change applies after a restart.
+                let (quit_label, restart_label, settings_label) =
+                    if ui_language_is_spanish(app.handle()) {
+                        ("Salir de Bloom", "Reiniciar Bloom", "Abrir ajustes")
+                    } else {
+                        ("Quit Bloom", "Restart Bloom", "Open Settings")
+                    };
+                let quit_item = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
                 let restart_item =
-                    MenuItem::with_id(app, "restart", "Restart Bloom", true, None::<&str>)?;
+                    MenuItem::with_id(app, "restart", restart_label, true, None::<&str>)?;
                 let settings_item =
-                    MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
+                    MenuItem::with_id(app, "settings", settings_label, true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&settings_item, &restart_item, &quit_item])?;
                 let ah = app.handle().clone();
                 TrayIconBuilder::new()

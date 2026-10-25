@@ -84,6 +84,14 @@ pub struct WifiStatus {
     pub ssid: Option<String>,
 }
 
+/// What the webviews follow from Windows while their settings say "system".
+#[derive(Clone, Serialize)]
+pub struct SystemLocale {
+    /// "es" or "en".
+    pub language: &'static str,
+    pub time_24h: bool,
+}
+
 #[derive(Clone, Serialize)]
 pub struct AudioSessionInfo {
     pub pid: u32,

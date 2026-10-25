@@ -14,6 +14,8 @@ import {
 } from "./windowRegion";
 import "./App.css";
 import { initTheme } from "./theme";
+import { parseTimeFormat, useSystemLocale } from "./systemLocale";
+import { t, tc, locale, useLanguage } from "./i18n";
 import {
 	PlayIcon,
 	PauseIcon,
@@ -495,6 +497,7 @@ const TitleMarquee = ({ title }: { title: string }) => {
 };
 
 function App() {
+	useLanguage();
 	useEffect(() => {
 		return initTheme();
 	}, []);
@@ -509,9 +512,12 @@ function App() {
 	const [scale, setScale] = useState(() =>
 		parseFloat(localStorage.getItem("bloom-scale") || "1.0")
 	);
-	const [timeFormat24h, setTimeFormat24h] = useState(
-		() => localStorage.getItem("bloom-time-format-24h") === "true"
+	// Null follows the clock in Windows' regional format.
+	const [timeFormatSetting, setTimeFormatSetting] = useState(() =>
+		parseTimeFormat(localStorage.getItem("bloom-time-format-24h"))
 	);
+	const systemLocale = useSystemLocale();
+	const timeFormat24h = timeFormatSetting ?? systemLocale.time_24h;
 
 	const [batteryLevel, setBatteryLevel] = useState(100);
 	const [isCharging, setIsCharging] = useState(false);
@@ -1009,7 +1015,7 @@ function App() {
 					getVal("bloom-media-compact-glow-enabled", "true") !== "false"
 				);
 				setSettingsCornersEnabled(getVal("bloom-corners-enabled", "false") === "true");
-				setTimeFormat24h(getVal("bloom-time-format-24h") === "true");
+				setTimeFormatSetting(parseTimeFormat(getVal("bloom-time-format-24h")));
 
 				const thresholdStr = getVal("bloom-low-battery-threshold", "20");
 				if (thresholdStr) setLowBatteryThreshold(parseInt(thresholdStr as string));
@@ -1137,7 +1143,7 @@ function App() {
 				} catch {}
 			},
 			"bloom-show-update-indicator": (value) => setShowUpdateIndicator(String(value) === "true"),
-			"bloom-time-format-24h": setTimeFormat24h
+			"bloom-time-format-24h": (value) => setTimeFormatSetting(parseTimeFormat(value))
 		},
 		[windowLabel]
 	);
@@ -1580,11 +1586,13 @@ function App() {
 
 		const room = Math.max(0, SHELF_MAX_ITEMS - prev.length);
 		if (room === 0) {
-			showShelfNotice(`Shelf is full (${SHELF_MAX_ITEMS}) — remove an item first`);
+			showShelfNotice(t("Shelf is full ({max}) — remove an item first", { max: SHELF_MAX_ITEMS }));
 			return;
 		}
 		if (fresh.length > room) {
-			showShelfNotice(`Shelf is full — added ${room} of ${fresh.length} items`);
+			showShelfNotice(
+				t("Shelf is full — added {added} of {total} items", { added: room, total: fresh.length })
+			);
 		}
 		const added = fresh.slice(0, room);
 		markShelfNew(added.map((i) => i.id));
@@ -1595,7 +1603,7 @@ function App() {
 		const prev = shelfItemsRef.current;
 		if (prev.some((i) => i.type === "text" && i.text === text)) return;
 		if (prev.length >= SHELF_MAX_ITEMS) {
-			showShelfNotice(`Shelf is full (${SHELF_MAX_ITEMS}) — remove an item first`);
+			showShelfNotice(t("Shelf is full ({max}) — remove an item first", { max: SHELF_MAX_ITEMS }));
 			return;
 		}
 		const item: ShelfItem = {
@@ -1616,7 +1624,7 @@ function App() {
 		if (item.type === "text") {
 			if (!item.text) return;
 			writeText(item.text)
-				.then(() => showShelfNotice("Copied to clipboard"))
+				.then(() => showShelfNotice(t("Copied to clipboard")))
 				.catch((e) => console.error("[shelf] copy failed:", e));
 			return;
 		}
@@ -1628,10 +1636,10 @@ function App() {
 				// failure (e.g. no association) must not remove it.
 				const alive = await invoke<string[]>("shelf_prune", { paths: [path] }).catch(() => null);
 				if (alive && alive.length === 0) {
-					showShelfNotice("File no longer exists — removed from shelf");
+					showShelfNotice(t("File no longer exists — removed from shelf"));
 					removeShelfItem(item.id);
 				} else {
-					showShelfNotice("Couldn't open the file");
+					showShelfNotice(t("Couldn't open the file"));
 				}
 			});
 		}
@@ -1884,15 +1892,15 @@ function App() {
 	const timerDisplaySeconds =
 		timerSeconds > 0 || isTimerFinished ? timerSeconds : lastDurationSeconds;
 	const primaryTimerLabel = isTimerRunning
-		? "Pause"
+		? t("Pause")
 		: timerSeconds > 0
-			? "Resume"
+			? t("Resume")
 			: isTimerFinished
-				? "Restart"
-				: "Start";
+				? t("Restart")
+				: tc("timer", "Start");
 	const timerEndTime =
 		timerSeconds > 0 && !isTimerFinished
-			? new Date(Date.now() + timerSeconds * 1000).toLocaleTimeString([], {
+			? new Date(Date.now() + timerSeconds * 1000).toLocaleTimeString(locale(), {
 					hour: "2-digit",
 					minute: "2-digit",
 					hour12: !timeFormat24h
@@ -2049,7 +2057,7 @@ function App() {
 		const updateTime = () => {
 			const now = new Date();
 			setTime(
-				now.toLocaleTimeString([], {
+				now.toLocaleTimeString(locale(), {
 					hour: "2-digit",
 					minute: "2-digit",
 					hour12: !timeFormat24h
@@ -2624,7 +2632,7 @@ function App() {
 				if (!settingsWeatherEnabled || temperature === null) return null;
 				return statusWidget(
 					"weather",
-					cityName ? `${weatherCondition} — ${cityName}` : weatherCondition,
+					cityName ? `${t(weatherCondition)} — ${cityName}` : t(weatherCondition),
 					<>
 						<WeatherIcon size={12} strokeWidth={2.2} />
 						<span className="label">
@@ -2653,7 +2661,7 @@ function App() {
 			case "cpu":
 				return statusWidget(
 					"cpu",
-					"CPU Usage",
+					t("CPU Usage"),
 					<>
 						<Cpu size={12} strokeWidth={2} />
 						<span className="label">{cpuUsage}%</span>
@@ -2662,7 +2670,7 @@ function App() {
 			case "ram":
 				return statusWidget(
 					"ram",
-					"RAM Usage",
+					t("RAM Usage"),
 					<>
 						<MemoryStick size={12} strokeWidth={2} />
 						<span className="label">{Math.round(ramUsage)}%</span>
@@ -2671,7 +2679,7 @@ function App() {
 			case "disk":
 				return statusWidget(
 					"disk",
-					"Free Disk Space",
+					t("Free Disk Space"),
 					<>
 						<HardDrive size={12} strokeWidth={2} />
 						<span className="label">{diskSpace}GB</span>
@@ -2680,7 +2688,7 @@ function App() {
 			case "net":
 				return statusWidget(
 					"net",
-					"Network Speed",
+					t("Network Speed"),
 					<>
 						<ArrowUpDown size={12} strokeWidth={2} />
 						<span className="label">
@@ -3010,7 +3018,7 @@ function App() {
 																	<motion.img
 																		key={`art-${albumArtKey}`}
 																		src={albumArtUrl}
-																		alt="Art"
+																		alt={t("Art")}
 																		initial={{ rotateY: 90, opacity: 0 }}
 																		animate={{ rotateY: 0, opacity: 1 }}
 																		exit={{ rotateY: -90, opacity: 0 }}
@@ -3050,7 +3058,7 @@ function App() {
 																		invoke("open_sound_settings").catch(() => {});
 																	}}
 																	whileTap={{ scale: 0.9 }}
-																	title="Audio Output"
+																	title={t("Audio Output")}
 																>
 																	<HeadphonesIcon size={20} style={{ opacity: 0.5 }} />
 																</motion.button>
@@ -3225,7 +3233,7 @@ function App() {
 															>
 																<GreenDownArrowIcon />
 																<span className="label" style={{ color: "#32D74B" }}>
-																	Update Available
+																	{t("Update Available")}
 																</span>
 															</motion.div>
 														) : (
@@ -3247,10 +3255,10 @@ function App() {
 																	style={{ color: showLowBatteryPulse ? "#FF453A" : "inherit" }}
 																>
 																	{showLowBatteryPulse
-																		? "Low Battery"
+																		? t("Low Battery")
 																		: isCharging
-																			? "Charging"
-																			: "On Battery"}{" "}
+																			? t("Charging")
+																			: t("On Battery")}{" "}
 																	• {batteryLevel}%
 																</span>
 															</motion.div>
@@ -3301,7 +3309,7 @@ function App() {
 																			key="panel-prev"
 																			type="button"
 																			className="panel-arrow prev"
-																			aria-label="Previous panel"
+																			aria-label={t("Previous panel")}
 																			initial={{ opacity: 0, x: 4 }}
 																			animate={{ opacity: 1, x: 0 }}
 																			exit={{ opacity: 0, x: 4 }}
@@ -3355,7 +3363,7 @@ function App() {
 																			key="panel-next"
 																			type="button"
 																			className="panel-arrow next"
-																			aria-label="Next panel"
+																			aria-label={t("Next panel")}
 																			initial={{ opacity: 0, x: -4 }}
 																			animate={{ opacity: 1, x: 0 }}
 																			exit={{ opacity: 0, x: -4 }}
@@ -3396,7 +3404,7 @@ function App() {
 																			)}
 																			<button
 																				className={`album-art album-art-activity${!isPlaying ? " paused" : ""}`}
-																				aria-label="Open music"
+																				aria-label={t("Open music")}
 																				onClick={(e) => {
 																					e.stopPropagation();
 																					openNotch("music");
@@ -3413,7 +3421,7 @@ function App() {
 																							<motion.img
 																								key={`compact-art-${albumArtKey}`}
 																								src={albumArtUrl}
-																								alt="Art"
+																								alt={t("Art")}
 																								draggable={false}
 																								initial={{ rotateY: 90, opacity: 0 }}
 																								animate={{ rotateY: 0, opacity: 1 }}
@@ -3644,7 +3652,7 @@ function App() {
 														e.stopPropagation();
 														setDndActive((prev) => !prev);
 													}}
-													title={`Focus / DND: ${dndActive ? "On" : "Off"}`}
+													title={t("Focus / DND: {state}", { state: dndActive ? t("On") : t("Off") })}
 												>
 													<MoonIcon />
 												</button>
@@ -3654,7 +3662,9 @@ function App() {
 														e.stopPropagation();
 														openBatterySaverSettings();
 													}}
-													title={`Energy Saver: ${batterySaverEnabled ? "On" : "Off"} — Click to open Settings`}
+													title={t("Energy Saver: {state} — Click to open Settings", {
+														state: batterySaverEnabled ? t("On") : t("Off")
+													})}
 												>
 													<BatterySaverIcon />
 												</button>
@@ -3664,7 +3674,7 @@ function App() {
 														e.stopPropagation();
 														openSystemTray(e);
 													}}
-													title="System Tray"
+													title={t("System Tray")}
 												>
 													<TrayIcon />
 												</button>
@@ -3674,7 +3684,7 @@ function App() {
 														e.stopPropagation();
 														invoke("open_notification_center");
 													}}
-													title="Notification Center"
+													title={t("Notification Center")}
 												>
 													<BellIcon />
 												</button>
@@ -3684,7 +3694,7 @@ function App() {
 														e.stopPropagation();
 														openSettingsWindow();
 													}}
-													title="Bloom Settings"
+													title={t("Bloom Settings")}
 												>
 													<SettingsIcon />
 												</button>
@@ -3694,7 +3704,7 @@ function App() {
 														e.stopPropagation();
 														invoke("restart_bloom");
 													}}
-													title="Restart Bloom"
+													title={t("Restart Bloom")}
 												>
 													<ReloadIcon />
 												</button>
@@ -3706,7 +3716,7 @@ function App() {
 												<div className="cc-classic-slider-row">
 													<div className="cc-classic-slider-label">
 														<VolumeLowIcon style={{ opacity: 0.5 }} />
-														<span>Volume</span>
+														<span>{t("Volume")}</span>
 													</div>
 													<div className="cc-classic-slider-track">
 														<input
@@ -3734,7 +3744,7 @@ function App() {
 												<div className="cc-classic-slider-row">
 													<div className="cc-classic-slider-label">
 														<BrightnessLowIcon />
-														<span>Brightness</span>
+														<span>{t("Brightness")}</span>
 													</div>
 													<div className="cc-classic-slider-track">
 														<input
@@ -3783,7 +3793,7 @@ function App() {
 												<button
 													className="announcement-close"
 													onClick={dismissAnnouncement}
-													title="Dismiss"
+													title={t("Dismiss")}
 												>
 													<X size={13} strokeWidth={2.2} />
 												</button>
@@ -3796,7 +3806,7 @@ function App() {
 													className="announcement-link"
 													onClick={() => openUrl(announcement.url!)}
 												>
-													Learn more
+													{t("Learn more")}
 												</button>
 											)}
 										</motion.div>
@@ -3825,19 +3835,21 @@ function App() {
 													<div className="timer-main">
 														<div className="timer-status">
 															{isEditingTimer
-																? "Set duration"
+																? t("Set duration")
 																: isTimerFinished
-																	? "Time's up"
+																	? t("Time's up")
 																	: timerEndTime
-																		? `${timerState === "paused" ? "Paused · " : ""}ends ${timerEndTime}`
-																		: "Click to edit"}
+																		? timerState === "paused"
+																			? t("Paused · ends {time}", { time: timerEndTime })
+																			: t("ends {time}", { time: timerEndTime })
+																		: t("Click to edit")}
 														</div>
 
 														<div className={`timer-clock-row ${isEditingTimer ? "editing" : ""}`}>
 															<div
 																className={`timer-clock ${isEditingTimer && !timerEditValid ? "invalid" : ""}`}
 																onClick={beginTimerEdit}
-																title={isTimerRunning ? undefined : "Click to set a duration"}
+																title={isTimerRunning ? undefined : t("Click to set a duration")}
 															>
 																{minuteDigitItems.map(({ digit, key }) => (
 																	<RollDigit key={key} value={digit} compact={clockCompact} />
@@ -3854,7 +3866,7 @@ function App() {
 																	className="timer-edit-input"
 																	type="text"
 																	inputMode="numeric"
-																	aria-label="Set timer duration"
+																	aria-label={t("Set timer duration")}
 																	value={formatTimerDigits(timerEditDigits)}
 																	onChange={(e) =>
 																		setTimerEditDigits(
@@ -3890,7 +3902,7 @@ function App() {
 															onClick={resetTimer}
 															className="timer-btn-reset"
 															disabled={timerSeconds === 0 && !isTimerFinished}
-															title="Reset"
+															title={t("Reset")}
 														>
 															<RotateCcw size={14} strokeWidth={2.5} />
 														</button>
@@ -3928,7 +3940,7 @@ function App() {
 											{shelfNotice && <div className="shelf-notice">{shelfNotice}</div>}
 											{shelfItems.length === 0 ? (
 												<div className="shelf-empty">
-													<span>Drop files or selected text here</span>
+													<span>{t("Drop files or selected text here")}</span>
 												</div>
 											) : (
 												<div
@@ -4008,12 +4020,12 @@ function App() {
 																	</div>
 																	<span className="shelf-tile-name">
 																		{item.type === "text"
-																			? `Text · ${item.text?.length ?? 0} chars`
+																			? t("Text · {count} chars", { count: item.text?.length ?? 0 })
 																			: item.name}
 																	</span>
 																	<button
 																		className="shelf-tile-remove"
-																		title="Remove from shelf"
+																		title={t("Remove from shelf")}
 																		onClick={(e) => {
 																			e.stopPropagation();
 																			removeShelfItem(item.id);
@@ -4042,7 +4054,11 @@ function App() {
 							ref={shelfBubbleRef}
 							type="button"
 							className={`activity-bubble shelf-bubble ${isHovered ? "expanded" : ""}`}
-							aria-label={`Open shelf: ${shelfItems.length} item${shelfItems.length === 1 ? "" : "s"}`}
+							aria-label={
+								shelfItems.length === 1
+									? t("Open shelf: 1 item")
+									: t("Open shelf: {count} items", { count: shelfItems.length })
+							}
 							// Anchored at the pill's centre, offset past its left edge.
 							style={{ right: "50%" }}
 							initial={{ opacity: 0, scale: 0.4, x: 28, marginRight: getDynamicWidth() / 2 + 8 }}
@@ -4074,7 +4090,9 @@ function App() {
 							ref={musicBubbleRef}
 							type="button"
 							className={`activity-bubble ${isHovered ? "expanded" : ""}`}
-							aria-label={mediaInfo.title ? `Open music: ${mediaInfo.title}` : "Open music"}
+							aria-label={
+								mediaInfo.title ? t("Open music: {title}", { title: mediaInfo.title }) : t("Open music")
+							}
 							// Anchored at the pill's centre, offset past its right edge.
 							style={{ left: "50%" }}
 							initial={{ opacity: 0, scale: 0.4, x: -28, marginLeft: getDynamicWidth() / 2 + 8 }}
@@ -4107,6 +4125,7 @@ function App() {
 }
 
 function Calendar() {
+	useLanguage();
 	const [date] = useState(new Date());
 
 	const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -4114,7 +4133,10 @@ function Calendar() {
 
 	const currentMonth = date.getMonth();
 	const currentYear = date.getFullYear();
-	const monthName = date.toLocaleString("default", { month: "long" });
+	const monthYear = date.toLocaleDateString(locale(), { month: "long", year: "numeric" });
+	// Narrow weekday names, Sunday first like the grid: 2023-01-01 was a Sunday.
+	const weekdayNarrow = new Intl.DateTimeFormat(locale(), { weekday: "narrow" });
+	const dayNames = Array.from({ length: 7 }, (_, i) => weekdayNarrow.format(new Date(2023, 0, 1 + i)));
 
 	const totalDays = daysInMonth(currentYear, currentMonth);
 	const startDay = firstDayOfMonth(currentYear, currentMonth);
@@ -4141,12 +4163,10 @@ function Calendar() {
 	return (
 		<div className="calendar-container">
 			<div className="calendar-header">
-				<span className="month-year">
-					{monthName} {currentYear}
-				</span>
+				<span className="month-year">{monthYear}</span>
 			</div>
 			<div className="calendar-grid">
-				{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+				{dayNames.map((d, i) => (
 					<div key={`${d}-${i}`} className="day-name">
 						{d}
 					</div>

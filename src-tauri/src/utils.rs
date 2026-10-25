@@ -1254,6 +1254,64 @@ pub fn get_setting_str(_app: &tauri::AppHandle, key: &str) -> Option<String> {
     guard.get(key)?.as_str().map(|s| s.to_string())
 }
 
+/// Bloom's languages for the Windows display language: Spanish, else English.
+pub fn windows_ui_language() -> &'static str {
+    // The low 10 bits are the primary language; LANG_SPANISH is 0x0A.
+    let lang_id = unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() };
+    if lang_id & 0x3ff == 0x0a {
+        "es"
+    } else {
+        "en"
+    }
+}
+
+/// Whether the regional format's short time ("Control Panel\International"
+/// sShortTime, e.g. "H:mm" vs "h:mm tt") uses a 24-hour clock. "H" is the
+/// 24-hour hour; "h" is the 12-hour one.
+pub fn short_time_is_24h(pattern: &str) -> bool {
+    pattern.contains('H')
+}
+
+pub fn windows_time_24h() -> bool {
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+    let mut buffer = [0u16; 80];
+    let mut size = std::mem::size_of_val(&buffer) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            windows::core::w!("Control Panel\\International"),
+            windows::core::w!("sShortTime"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    if status.is_err() {
+        return false;
+    }
+    let len = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
+    short_time_is_24h(&String::from_utf16_lossy(&buffer[..len]))
+}
+
+pub fn windows_locale() -> crate::types::SystemLocale {
+    crate::types::SystemLocale {
+        language: windows_ui_language(),
+        time_24h: windows_time_24h(),
+    }
+}
+
+/// Whether Bloom's native strings (the tray menu) should be Spanish, following
+/// `bloom-language` like the webviews do: "system" or unset means the Windows
+/// display language.
+pub fn ui_language_is_spanish(app: &tauri::AppHandle) -> bool {
+    match get_setting_str(app, "bloom-language").as_deref() {
+        Some("es") => true,
+        Some("en") => false,
+        _ => windows_ui_language() == "es",
+    }
+}
+
 fn dock_setting_enabled(value: Option<&serde_json::Value>) -> bool {
     value.is_none_or(|value| value.as_str() == Some("true"))
 }
@@ -1485,8 +1543,16 @@ mod tests {
     use super::{
         click_through_style, expand_env_vars, is_placed_rect, marker_contents, moved_squirrel_exe,
         newest_squirrel_folder, parse_marker_pid, parse_marker_rect, parse_marker_secondaries,
-        parse_marker_state, relaunch_executable,
+        parse_marker_state, relaunch_executable, short_time_is_24h,
     };
+
+    #[test]
+    fn reads_the_clock_from_the_short_time_pattern() {
+        assert!(short_time_is_24h("H:mm"));
+        assert!(short_time_is_24h("HH:mm"));
+        assert!(!short_time_is_24h("h:mm tt"));
+        assert!(!short_time_is_24h("tt hh:mm"));
+    }
 
     #[test]
     fn picks_the_newest_squirrel_version_by_number() {

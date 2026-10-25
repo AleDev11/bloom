@@ -21,6 +21,7 @@ import {
 	X
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
+import { t, useLanguage } from "../i18n";
 import {
 	KNOWN_FOLDER_OPTIONS,
 	driveLetter,
@@ -42,6 +43,7 @@ function DrivePicker({
 	hiddenDrives: string;
 	onToggle: (letter: string) => void;
 }) {
+	useLanguage();
 	const [drives, setDrives] = useState<{ letter: string; name: string }[]>([]);
 
 	useEffect(() => {
@@ -60,7 +62,7 @@ function DrivePicker({
 	const hidden = parseHiddenDrives(hiddenDrives);
 	const disconnected = hidden
 		.filter((letter) => !drives.some((drive) => drive.letter === letter))
-		.map((letter) => ({ letter, name: `${letter}: (not connected)` }));
+		.map((letter) => ({ letter, name: t("{letter}: (not connected)", { letter }) }));
 
 	return (
 		<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingLeft: ROW_CONTENT_INDENT }}>
@@ -172,6 +174,7 @@ export function DockTab({
 	startIcon,
 	handleStartIconChange
 }: DockTabProps) {
+	useLanguage();
 	const handleStartIconUpload = (e: ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
@@ -187,7 +190,7 @@ export function DockTab({
 		<>
 			<div className="setting-group-label">Dock</div>
 			<div className="setting-group">
-				<SettingRow icon={Monitor} label="Bloom Dock" desc="Replace Windows taskbar">
+				<SettingRow icon={Monitor} label={t("Bloom Dock")} desc={t("Replace Windows taskbar")}>
 					<label className="toggle-switch">
 						<input type="checkbox" checked={dockEnabled} onChange={toggleDock} />
 						<span className="slider"></span>
@@ -198,28 +201,28 @@ export function DockTab({
 					<>
 						<SettingRow
 							icon={dockMode === "fixed" ? EyeOff : Eye}
-							label="Behavior"
-							desc="Choose how the dock appears"
+							label={t("Behavior")}
+							desc={t("Choose how the dock appears")}
 						>
 							<select
 								className="settings-select"
 								value={dockMode}
 								onChange={(e) => setDockModeValue(e.target.value)}
 							>
-								<option value="fixed">Fixed</option>
-								<option value="smart">Smart</option>
-								<option value="peek">Peek</option>
+								<option value="fixed">{t("Fixed")}</option>
+								<option value="smart">{t("Smart")}</option>
+								<option value="peek">{t("Peek")}</option>
 							</select>
 						</SettingRow>
 
 						{dockMode !== "fixed" && (
 							<SettingRow
 								icon={Timer}
-								label="Peek Delay"
+								label={t("Peek Delay")}
 								desc={
 									dockEdgeDelay === 0
-										? "Reveal instantly on bottom-edge contact"
-										: `Rest on the bottom edge for ${dockEdgeDelay}ms to reveal`
+										? t("Reveal instantly on bottom-edge contact")
+										: t("Rest on the bottom edge for {delay}ms to reveal", { delay: dockEdgeDelay })
 								}
 							>
 								<input
@@ -234,14 +237,22 @@ export function DockTab({
 							</SettingRow>
 						)}
 
-						<SettingRow icon={Eye} label="Show App Previews" desc="Show window thumbnails on hover">
+						<SettingRow
+							icon={Eye}
+							label={t("Show App Previews")}
+							desc={t("Show window thumbnails on hover")}
+						>
 							<label className="toggle-switch">
 								<input type="checkbox" checked={dockPreviewEnabled} onChange={toggleDockPreview} />
 								<span className="slider"></span>
 							</label>
 						</SettingRow>
 
-						<SettingRow icon={Circle} label="Icon Only" desc="Remove icon background and padding">
+						<SettingRow
+							icon={Circle}
+							label={t("Icon Only")}
+							desc={t("Remove icon background and padding")}
+						>
 							<label className="toggle-switch">
 								<input type="checkbox" checked={dockIconOnly} onChange={toggleDockIconOnly} />
 								<span className="slider"></span>
@@ -250,8 +261,8 @@ export function DockTab({
 
 						<SettingRow
 							icon={Columns2}
-							label="App Separator"
-							desc="Show a divider before unpinned apps"
+							label={t("App Separator")}
+							desc={t("Show a divider before unpinned apps")}
 						>
 							<label className="toggle-switch">
 								<input
@@ -263,7 +274,11 @@ export function DockTab({
 							</label>
 						</SettingRow>
 
-						<SettingRow icon={Copy} label="Task View" desc="Show the Task View button beside Start">
+						<SettingRow
+							icon={Copy}
+							label={t("Task View")}
+							desc={t("Show the Task View button beside Start")}
+						>
 							<label className="toggle-switch">
 								<input type="checkbox" checked={dockTaskView} onChange={toggleDockTaskView} />
 								<span className="slider"></span>
@@ -289,8 +304,8 @@ export function DockTab({
 						{dockMode === "fixed" && (
 							<SettingRow
 								icon={Maximize2}
-								label="Adaptive Mode"
-								desc="Stretch to full width when a window is maximized"
+								label={t("Adaptive Mode")}
+								desc={t("Stretch to full width when a window is maximized")}
 								divider={false}
 							>
 								<label className="toggle-switch">
@@ -302,17 +317,17 @@ export function DockTab({
 
 						<SettingRow
 							icon={LayoutPanelLeft}
-							label="Dock Extras"
-							desc="Show drives, folders and the Recycle Bin beside the apps"
+							label={t("Dock Extras")}
+							desc={t("Show drives, folders and the Recycle Bin beside the apps")}
 						>
 							<select
 								className="settings-select"
 								value={dockExtrasPosition}
 								onChange={(e) => handleDockExtrasPositionChange(e.target.value)}
 							>
-								<option value="off">Off</option>
-								<option value="left">Left</option>
-								<option value="right">Right</option>
+								<option value="off">{t("Off")}</option>
+								<option value="left">{t("Left")}</option>
+								<option value="right">{t("Right")}</option>
 							</select>
 						</SettingRow>
 
@@ -320,8 +335,8 @@ export function DockTab({
 							<>
 								<SettingRow
 									icon={HardDrive}
-									label="Drives"
-									desc="Fixed, removable and connected network drives"
+									label={t("Drives")}
+									desc={t("Fixed, removable and connected network drives")}
 									divider={!dockExtrasDrives}
 								>
 									<label className="toggle-switch">
@@ -348,8 +363,8 @@ export function DockTab({
 
 								<SettingRow
 									icon={Trash2}
-									label="Recycle Bin"
-									desc="Show the Recycle Bin in the extras"
+									label={t("Recycle Bin")}
+									desc={t("Show the Recycle Bin in the extras")}
 								>
 									<label className="toggle-switch">
 										<input
@@ -370,9 +385,9 @@ export function DockTab({
 											<FolderOpen size={14} strokeWidth={1.5} />
 										</div>
 										<div className="setting-info">
-											<span className="setting-label">Special Folders</span>
+											<span className="setting-label">{t("Special Folders")}</span>
 											<span className="setting-desc">
-												Pick the folders that appear in the extras
+												{t("Pick the folders that appear in the extras")}
 											</span>
 										</div>
 									</div>
@@ -393,7 +408,7 @@ export function DockTab({
 													className={`folder-chip ${active ? "active" : ""}`}
 													onClick={() => toggleDockExtraFolder(folder.id)}
 												>
-													{folder.label}
+													{t(folder.label)}
 												</button>
 											);
 										})}
@@ -410,8 +425,10 @@ export function DockTab({
 											<FolderPlus size={14} strokeWidth={1.5} />
 										</div>
 										<div className="setting-info">
-											<span className="setting-label">Custom Folders</span>
-											<span className="setting-desc">Add any folder to the extras section</span>
+											<span className="setting-label">{t("Custom Folders")}</span>
+											<span className="setting-desc">
+												{t("Add any folder to the extras section")}
+											</span>
 										</div>
 									</div>
 									<div
@@ -431,7 +448,7 @@ export function DockTab({
 												<button
 													type="button"
 													className="extra-folder-remove"
-													title="Remove folder"
+													title={t("Remove folder")}
 													onClick={() => handleRemoveDockExtraFolder(folder.path)}
 												>
 													<X size={14} strokeWidth={2} />
@@ -444,7 +461,7 @@ export function DockTab({
 											onClick={handleAddDockExtraFolder}
 										>
 											<Plus size={13} strokeWidth={2} />
-											Add Folder...
+											{t("Add Folder...")}
 										</button>
 									</div>
 								</div>
@@ -461,8 +478,8 @@ export function DockTab({
 									<Sparkles size={14} strokeWidth={1.5} />
 								</div>
 								<div className="setting-info">
-									<span className="setting-label">Start Menu Icon</span>
-									<span className="setting-desc">Choose the dock start button icon</span>
+									<span className="setting-label">{t("Start Menu Icon")}</span>
+									<span className="setting-desc">{t("Choose the dock start button icon")}</span>
 								</div>
 							</div>
 							<div
@@ -478,11 +495,11 @@ export function DockTab({
 										key={icon.key}
 										onClick={() => handleStartIconChange(icon.key)}
 										style={startIconTileStyle(startIcon === icon.key)}
-										title={icon.label}
+										title={t(icon.label)}
 									>
 										<img
 											src={icon.src}
-											alt={icon.label}
+											alt={t(icon.label)}
 											style={{ width: "100%", height: "100%", objectFit: "contain" }}
 											draggable={false}
 										/>
@@ -491,12 +508,12 @@ export function DockTab({
 								<div
 									onClick={() => document.getElementById("start-icon-file-input")?.click()}
 									style={startIconTileStyle(startIcon.startsWith("custom:"))}
-									title="Custom icon"
+									title={t("Custom icon")}
 								>
 									{startIcon.startsWith("custom:") ? (
 										<img
 											src={startIcon.replace("custom:", "")}
-											alt="Custom"
+											alt={t("Custom")}
 											style={{
 												width: "100%",
 												height: "100%",
@@ -513,7 +530,7 @@ export function DockTab({
 									<div
 										onClick={() => handleStartIconChange("default")}
 										style={startIconTileStyle(false)}
-										title="Reset to default"
+										title={t("Reset to default")}
 									>
 										<RotateCcw size={18} strokeWidth={1.5} />
 									</div>
