@@ -413,6 +413,12 @@ interface WifiStatus {
 	ssid: string | null;
 }
 
+/** Mirrors `RadioPresence` in src-tauri/src/types.rs. */
+interface RadioPresence {
+	wifi: boolean;
+	bluetooth: boolean;
+}
+
 // A shelf file's preview from the backend: a picture when one can be made,
 // else the opening text of a document or text file, and whether it's a folder
 // (for the placeholder icon).
@@ -521,6 +527,9 @@ function App() {
 
 	const [batteryLevel, setBatteryLevel] = useState(100);
 	const [isCharging, setIsCharging] = useState(false);
+	// Null until the backend says whether a battery exists. Desktops have none,
+	// and the webview's Battery API reports them as a full, charging battery.
+	const [hasBattery, setHasBattery] = useState<boolean | null>(null);
 	// Fetched when the pointer reaches the battery widget, for its tooltip.
 	const [batteryDetails, setBatteryDetails] = useState<BatteryDetails | null>(null);
 	// The status widget whose tooltip is open, the side of the pill it hangs
@@ -611,6 +620,25 @@ function App() {
 	const wifiEnabled = wifiStatus?.enabled ?? false;
 	const wifiConnected = wifiStatus?.connected ?? false;
 	const [bluetoothEnabled, setBluetoothEnabled] = useState(true);
+	// Tiles stay until the backend says the adapter is missing.
+	const [radioPresence, setRadioPresence] = useState<RadioPresence>({
+		wifi: true,
+		bluetooth: true
+	});
+	// Asked again on resume and whenever the controls open: an internal USB
+	// Bluetooth adapter can appear late, and a dongle can come and go.
+	const refreshRadioPresence = useCallback(() => {
+		invoke<RadioPresence>("get_radio_presence")
+			.then(setRadioPresence)
+			.catch((err) => console.error("Failed to read radio presence:", err));
+	}, []);
+	useEffect(() => {
+		refreshRadioPresence();
+		const unlisten = listen("system-resumed", refreshRadioPresence);
+		return () => {
+			unlisten.then((fn) => fn());
+		};
+	}, [refreshRadioPresence]);
 	// Names of connected Bluetooth devices, for the controls tile.
 	const [btConnectedNames, setBtConnectedNames] = useState<string[]>([]);
 	const [batterySaverEnabled, setBatterySaverEnabled] = useState(false);
@@ -1242,6 +1270,9 @@ function App() {
 
 	// Bloom mode state: 'music', 'calendar', 'command-center', 'announcement', 'shelf', or 'status'
 	const [bloomMode, setBloomMode] = useState<BloomMode>("status");
+	useEffect(() => {
+		if (bloomMode === "command-center") refreshRadioPresence();
+	}, [bloomMode, refreshRadioPresence]);
 
 	// Shelf: files and selected text stashed in the notch via drag-and-drop.
 	// Files are stored as plain paths (references, never copies). Session-scoped
@@ -2073,34 +2104,57 @@ function App() {
 		};
 	}, [timeFormat24h]);
 
-	// Battery API
+	// Battery API. The backend says whether a battery exists; the webview's
+	// Battery API then tracks level and charging. One Windows hasn't reported
+	// yet (early at login, or right after resume) is looked for again shortly
+	// after start and on every resume.
 	useEffect(() => {
 		let battery: any = null;
+		let checking = false;
+		let disposed = false;
 
-		const initBattery = async () => {
+		const updateBattery = () => {
+			setBatteryLevel(Math.round(battery.level * 100));
+			setIsCharging(battery.charging);
+		};
+
+		const checkBattery = async () => {
+			if (battery || checking || disposed) return;
+			checking = true;
 			try {
-				battery = await (navigator as any).getBattery();
+				// If the backend can't tell, fall back to the webview's Battery API.
+				const present = await invoke<BatteryDetails>("get_battery_details")
+					.then((details) => details.present)
+					.catch(() => true);
+				if (disposed) return;
+				setHasBattery(present);
+				if (!present) return;
 
-				const updateBattery = () => {
-					setBatteryLevel(Math.round(battery.level * 100));
-					setIsCharging(battery.charging);
-				};
-
+				const found = await (navigator as any).getBattery();
+				if (disposed) return;
+				battery = found;
 				updateBattery();
-
 				battery.addEventListener("levelchange", updateBattery);
 				battery.addEventListener("chargingchange", updateBattery);
-
-				return () => {
-					battery.removeEventListener("levelchange", updateBattery);
-					battery.removeEventListener("chargingchange", updateBattery);
-				};
 			} catch (e) {
 				// Battery API not supported
+			} finally {
+				checking = false;
 			}
 		};
 
-		initBattery();
+		checkBattery();
+		const retry = setTimeout(checkBattery, 15000);
+		const unlistenResume = listen("system-resumed", checkBattery);
+		return () => {
+			disposed = true;
+			clearTimeout(retry);
+			unlistenResume.then((fn) => fn());
+			if (battery) {
+				battery.removeEventListener("levelchange", updateBattery);
+				battery.removeEventListener("chargingchange", updateBattery);
+			}
+		};
 	}, []);
 
 	// Listen for Volume Changes
@@ -2641,12 +2695,14 @@ function App() {
 					</>
 				);
 			case "battery":
+				if (!hasBattery) return null;
 				return statusWidget(
 					"battery",
 					batteryTooltip(
 						batteryDetails,
 						{ level: batteryLevel, charging: isCharging },
-						batterySaverEnabled
+						batterySaverEnabled,
+						t
 					),
 					<>
 						<BatteryIcon
@@ -3526,119 +3582,123 @@ function App() {
 											{/* Pills Grid */}
 											<div className="cc-pills-grid">
 												{/* Wi-Fi Pill */}
-												<div
-													className={`cc-pill-tile ${wifiEnabled ? "active" : ""}`}
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleWifi();
-													}}
-													onContextMenu={handleWifiRightClick}
-													title="Left-click to toggle, Right-click for networks"
-												>
-													<div className="cc-pill-icon-wrapper">
-														<WifiIcon enabled={wifiEnabled} connected={wifiConnected} />
-													</div>
-													<div className="cc-pill-info">
-														<span className="cc-pill-title">Wi-Fi</span>
-														<span className="cc-pill-status">
-															{wifiStatus === null
-																? "…"
-																: !wifiEnabled
-																	? "Off"
-																	: wifiConnected
-																		? (wifiStatus?.ssid ?? "Connected")
-																		: "Not connected"}
-														</span>
-													</div>
-													<button
-														className="cc-pill-more"
-														aria-label="Wi-Fi networks"
-														title="Wi-Fi networks"
+												{radioPresence.wifi && (
+													<div
+														className={`cc-pill-tile ${wifiEnabled ? "active" : ""}`}
 														onClick={(e) => {
 															e.stopPropagation();
-															setBloomMode("wifi");
+															toggleWifi();
 														}}
+														onContextMenu={handleWifiRightClick}
+														title={t("Left-click to toggle, Right-click for networks")}
 													>
-														<ChevronRight />
-													</button>
-												</div>
+														<div className="cc-pill-icon-wrapper">
+															<WifiIcon enabled={wifiEnabled} connected={wifiConnected} />
+														</div>
+														<div className="cc-pill-info">
+															<span className="cc-pill-title">Wi-Fi</span>
+															<span className="cc-pill-status">
+																{wifiStatus === null
+																	? "…"
+																	: !wifiEnabled
+																		? t("Off")
+																		: wifiConnected
+																			? (wifiStatus?.ssid ?? t("Connected"))
+																			: t("Not connected")}
+															</span>
+														</div>
+														<button
+															className="cc-pill-more"
+															aria-label={t("Wi-Fi networks")}
+															title={t("Wi-Fi networks")}
+															onClick={(e) => {
+																e.stopPropagation();
+																setBloomMode("wifi");
+															}}
+														>
+															<ChevronRight />
+														</button>
+													</div>
+												)}
 
 												{/* Dock Mode Pill */}
 												<div
 													className={`cc-pill-tile ${dockMode === "fixed" ? "active" : ""}`}
 													onClick={toggleDockModeSetting}
-													title="Cycle dock mode: Fixed / Smart / Peek"
+													title={t("Cycle dock mode: Fixed / Smart / Peek")}
 												>
 													<div className="cc-pill-icon-wrapper">
 														<DockIcon />
 													</div>
 													<div className="cc-pill-info">
-														<span className="cc-pill-title">Dock Mode</span>
+														<span className="cc-pill-title">{t("Dock Mode")}</span>
 														<span className="cc-pill-status">
 															{dockMode === "fixed"
-																? "Fixed"
+																? t("Fixed")
 																: dockMode === "smart"
-																	? "Smart"
-																	: "Peek"}
+																	? t("Smart")
+																	: t("Peek")}
 														</span>
 													</div>
 												</div>
 
 												{/* Bluetooth Pill */}
-												<div
-													className={`cc-pill-tile ${bluetoothEnabled ? "active" : ""}`}
-													onClick={(e) => {
-														e.stopPropagation();
-														toggleBluetooth();
-													}}
-													onContextMenu={handleBluetoothRightClick}
-													title="Left-click to toggle, Right-click for devices"
-												>
-													<div className="cc-pill-icon-wrapper">
-														<BluetoothIcon />
-													</div>
-													<div className="cc-pill-info">
-														<span className="cc-pill-title">Bluetooth</span>
-														<span className="cc-pill-status">
-															{!bluetoothEnabled
-																? "Off"
-																: btConnectedNames.length === 1
-																	? btConnectedNames[0]
-																	: btConnectedNames.length > 1
-																		? `${btConnectedNames.length} connected`
-																		: "On"}
-														</span>
-													</div>
-													<button
-														className="cc-pill-more"
-														aria-label="Bluetooth devices"
-														title="Bluetooth devices"
+												{radioPresence.bluetooth && (
+													<div
+														className={`cc-pill-tile ${bluetoothEnabled ? "active" : ""}`}
 														onClick={(e) => {
 															e.stopPropagation();
-															setBloomMode("bluetooth");
+															toggleBluetooth();
 														}}
+														onContextMenu={handleBluetoothRightClick}
+														title={t("Left-click to toggle, Right-click for devices")}
 													>
-														<ChevronRight />
-													</button>
-												</div>
+														<div className="cc-pill-icon-wrapper">
+															<BluetoothIcon />
+														</div>
+														<div className="cc-pill-info">
+															<span className="cc-pill-title">Bluetooth</span>
+															<span className="cc-pill-status">
+																{!bluetoothEnabled
+																	? t("Off")
+																	: btConnectedNames.length === 1
+																		? btConnectedNames[0]
+																		: btConnectedNames.length > 1
+																			? t("{count} connected", { count: btConnectedNames.length })
+																			: t("On")}
+															</span>
+														</div>
+														<button
+															className="cc-pill-more"
+															aria-label={t("Bluetooth devices")}
+															title={t("Bluetooth devices")}
+															onClick={(e) => {
+																e.stopPropagation();
+																setBloomMode("bluetooth");
+															}}
+														>
+															<ChevronRight />
+														</button>
+													</div>
+												)}
 
 												{/* Notch Mode Pill */}
 												<div
 													className={`cc-pill-tile ${notchMode === "fixed" ? "active" : ""}`}
 													onClick={toggleNotchModeSetting}
-													title="Cycle notch mode: Fixed / Smart / Peek"
+													title={t("Cycle notch mode: Fixed / Smart / Peek")}
 												>
 													<div className="cc-pill-icon-wrapper">
 														<NotchIcon />
 													</div>
 													<div className="cc-pill-info">
-														<span className="cc-pill-title">Notch Mode</span>
+														<span className="cc-pill-title">{t("Notch Mode")}</span>
 														<span className="cc-pill-status">
 															{notchMode === "fixed"
-																? "Fixed"
+																? t("Fixed")
 																: notchMode === "smart"
-																	? "Smart"
-																	: "Peek"}
+																	? t("Smart")
+																	: t("Peek")}
 														</span>
 													</div>
 												</div>

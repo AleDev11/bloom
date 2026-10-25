@@ -10,7 +10,8 @@ use crate::services::{
 };
 use crate::state::*;
 use crate::types::{
-    AppInfo, AudioSessionInfo, BrightnessChangeEvent, IntRect, VolumeChangeEvent, WifiStatus,
+    AppInfo, AudioSessionInfo, BrightnessChangeEvent, IntRect, RadioPresence, VolumeChangeEvent,
+    WifiStatus,
 };
 use crate::utils::*;
 use std::collections::HashMap;
@@ -3231,6 +3232,40 @@ fn get_radio_state_sync(kind: windows::Devices::Radios::RadioKind) -> Result<boo
         }
     }
     Ok(false)
+}
+
+/// Windows lists a radio for each Wi-Fi or Bluetooth adapter it has, on or off.
+#[tauri::command]
+pub async fn get_radio_presence() -> Result<RadioPresence, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<RadioPresence, String> {
+        use windows::Devices::Radios::{Radio, RadioKind};
+        unsafe {
+            let _ = windows::Win32::System::Com::CoInitializeEx(
+                None,
+                windows::Win32::System::Com::COINIT_MULTITHREADED,
+            );
+        }
+        let radios = Radio::GetRadiosAsync()
+            .and_then(|op| op.get())
+            .map_err(|e| e.to_string())?;
+        let mut presence = RadioPresence {
+            wifi: false,
+            bluetooth: false,
+        };
+        for i in 0..radios.Size().unwrap_or(0) {
+            let Ok(radio) = radios.GetAt(i) else {
+                continue;
+            };
+            match radio.Kind() {
+                Ok(RadioKind::WiFi) => presence.wifi = true,
+                Ok(RadioKind::Bluetooth) => presence.bluetooth = true,
+                _ => {}
+            }
+        }
+        Ok(presence)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn set_radio_state_sync(

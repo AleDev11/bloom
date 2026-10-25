@@ -84,6 +84,14 @@ pub struct WifiStatus {
     pub ssid: Option<String>,
 }
 
+/// Which radios the machine has at all, so the controls panel can drop tiles
+/// for hardware that isn't there (a desktop without a Wi-Fi card).
+#[derive(Clone, Serialize)]
+pub struct RadioPresence {
+    pub wifi: bool,
+    pub bluetooth: bool,
+}
+
 /// What the webviews follow from Windows while their settings say "system".
 #[derive(Clone, Serialize)]
 pub struct SystemLocale {

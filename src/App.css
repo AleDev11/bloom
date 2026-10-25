@@ -1751,6 +1751,11 @@ img {
 	height: 78px;
 }
 
+/* A missing Wi-Fi or Bluetooth tile leaves an odd one out: let it span the row. */
+.cc-pills-grid > .cc-pill-tile:last-child:nth-child(odd) {
+	grid-column: span 2;
+}
+
 .cc-pill-tile {
 	display: flex;
 	align-items: center;

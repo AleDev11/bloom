@@ -179,6 +179,7 @@ fn main() {
             settings_file_readable,
             capture_window_thumbnail,
             get_wifi_status,
+            get_radio_presence,
             set_wifi_state,
             get_bluetooth_state,
             set_bluetooth_state,
