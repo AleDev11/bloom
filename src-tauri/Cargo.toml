@@ -72,7 +72,9 @@ windows = { version = "0.61", features = [
 	"Win32_NetworkManagement_Ndis",
 	"Win32_NetworkManagement_WiFi",
 	"Win32_NetworkManagement_WNet",
-	"Win32_Globalization"
+	"Win32_Globalization",
+	"Win32_System_Shutdown",
+	"Storage_Search"
 ] }
 base64 = "0.22"
 tauri-plugin-autostart = "2.5.1"

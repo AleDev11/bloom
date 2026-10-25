@@ -5,6 +5,7 @@ mod bluetooth;
 mod commands;
 mod diagnostics;
 mod dock_extras;
+mod launcher;
 mod services;
 mod shelf;
 mod shelf_preview;
@@ -195,6 +196,13 @@ fn main() {
             get_system_theme,
             get_system_locale,
             set_visualizer_active,
+            launcher::hide_launcher,
+            launcher::resize_launcher,
+            launcher::launcher_search_files,
+            launcher::launcher_open_file,
+            launcher::launcher_reveal_file,
+            launcher::launcher_open_settings_page,
+            launcher::launcher_run_action,
             get_cpu_usage,
             get_ram_usage,
             get_disk_space,
@@ -374,6 +382,7 @@ fn main() {
             let tx = setup_system_worker(app.handle().clone());
             let _ = COMMAND_SENDER.set(tx.clone());
             services::setup_keyboard_hook(app.handle().clone());
+            launcher::setup_launcher_hotkey(app.handle().clone());
             setup_taskbar_hook();
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
@@ -397,6 +406,23 @@ fn main() {
                         }
                     });
                 }
+            }
+
+            if let Some(launcher_win) = app.get_webview_window("launcher") {
+                // Acrylic blurs whatever is behind the search box, like Start.
+                let _ = window_vibrancy::apply_acrylic(&launcher_win, None);
+                let win_clone = launcher_win.clone();
+                launcher_win.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = win_clone.hide();
+                    }
+                    // Clicking anywhere else dismisses it, as Spotlight does.
+                    tauri::WindowEvent::Focused(false) => {
+                        let _ = win_clone.hide();
+                    }
+                    _ => {}
+                });
             }
 
             if let Some(settings_win) = app.get_webview_window("settings") {

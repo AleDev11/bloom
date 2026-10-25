@@ -140,6 +140,8 @@ function SettingsApp() {
 							handleTimeFormatChange={settings.handleTimeFormatChange}
 							language={settings.language}
 							handleLanguageChange={settings.handleLanguageChange}
+							launcherEnabled={settings.launcherEnabled}
+							toggleLauncher={settings.toggleLauncher}
 							showUpdateIndicator={settings.showUpdateIndicator}
 							toggleUpdateIndicator={settings.toggleUpdateIndicator}
 							lowBatteryThreshold={settings.lowBatteryThreshold}

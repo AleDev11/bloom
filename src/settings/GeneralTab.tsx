@@ -6,7 +6,8 @@ import {
 	RefreshCw,
 	RotateCcw,
 	LogOut,
-	Languages
+	Languages,
+	Search
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 import { LANGUAGES, t, useLanguage } from "../i18n";
@@ -18,6 +19,8 @@ interface GeneralTabProps {
 	handleTimeFormatChange: (value: string) => void;
 	language: string;
 	handleLanguageChange: (value: string) => void;
+	launcherEnabled: boolean;
+	toggleLauncher: () => void;
 	showUpdateIndicator: boolean;
 	toggleUpdateIndicator: () => void;
 	lowBatteryThreshold: number;
@@ -34,6 +37,8 @@ export function GeneralTab({
 	handleTimeFormatChange,
 	language,
 	handleLanguageChange,
+	launcherEnabled,
+	toggleLauncher,
 	showUpdateIndicator,
 	toggleUpdateIndicator,
 	lowBatteryThreshold,
@@ -59,6 +64,17 @@ export function GeneralTab({
 							</option>
 						))}
 					</select>
+				</SettingRow>
+
+				<SettingRow
+					icon={Search}
+					label={t("Search (Alt+Space)")}
+					desc={t("Find apps, files, settings and actions, and calculate")}
+				>
+					<label className="toggle-switch">
+						<input type="checkbox" checked={launcherEnabled} onChange={toggleLauncher} />
+						<span className="slider"></span>
+					</label>
 				</SettingRow>
 
 				<SettingRow icon={Power} label={t("Launch at Login")} desc={t("Open Bloom automatically")}>

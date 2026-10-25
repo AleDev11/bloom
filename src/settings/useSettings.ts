@@ -120,6 +120,9 @@ export function useSettings() {
 	const [keepSecondaryTaskbars, setKeepSecondaryTaskbars] = useState(
 		() => localStorage.getItem("bloom-keep-secondary-taskbars") !== "false"
 	);
+	const [launcherEnabled, setLauncherEnabled] = useState(
+		() => localStorage.getItem("bloom-launcher-enabled") !== "false"
+	);
 	const [dockExtrasFolders, setDockExtrasFolders] = useState(
 		() => localStorage.getItem("bloom-dock-extras-folders") ?? DEFAULT_ENABLED_FOLDERS
 	);
@@ -229,6 +232,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-extras-recycle-bin"), setDockExtrasRecycleBin, readBool);
 			apply(getVal("bloom-dock-task-view"), setDockTaskView, readBool);
 			apply(getVal("bloom-keep-secondary-taskbars"), setKeepSecondaryTaskbars, readBool);
+			apply(getVal("bloom-launcher-enabled"), setLauncherEnabled, readBool);
 			apply(getVal("bloom-dock-extras-hidden-drives"), setDockExtrasHiddenDrives, (v) => v);
 			apply(getVal("bloom-dock-extras-folders"), setDockExtrasFolders, (v) => v);
 			apply(getVal("bloom-dock-extras-custom-folders"), setDockExtrasCustomFolders, (v) => v);
@@ -365,6 +369,7 @@ export function useSettings() {
 		"bloom-dock-extras-recycle-bin": setDockExtrasRecycleBin,
 		"bloom-dock-task-view": setDockTaskView,
 		"bloom-keep-secondary-taskbars": setKeepSecondaryTaskbars,
+		"bloom-launcher-enabled": setLauncherEnabled,
 		"bloom-dock-extras-hidden-drives": setDockExtrasHiddenDrives,
 		"bloom-dock-extras-folders": setDockExtrasFolders,
 		"bloom-dock-extras-custom-folders": setDockExtrasCustomFolders,
@@ -698,6 +703,12 @@ export function useSettings() {
 		const next = !dockExtrasRecycleBin;
 		setDockExtrasRecycleBin(next);
 		saveSetting("bloom-dock-extras-recycle-bin", String(next));
+	};
+
+	const toggleLauncher = () => {
+		const next = !launcherEnabled;
+		setLauncherEnabled(next);
+		saveSetting("bloom-launcher-enabled", String(next));
 	};
 
 	const toggleKeepSecondaryTaskbars = () => {
@@ -1041,6 +1052,8 @@ export function useSettings() {
 		toggleDockTaskView,
 		keepSecondaryTaskbars,
 		toggleKeepSecondaryTaskbars,
+		launcherEnabled,
+		toggleLauncher,
 		dockExtrasFolders,
 		toggleDockExtraFolder,
 		dockExtrasCustomFolders,

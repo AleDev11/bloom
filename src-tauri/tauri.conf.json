@@ -93,6 +93,26 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": false
+      },
+      {
+        "label": "launcher",
+        "title": "Bloom Search",
+        "url": "launcher.html",
+        "width": 680,
+        "height": 460,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "focus": true,
+        "skipTaskbar": true,
+        "shadow": true,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {
