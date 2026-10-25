@@ -198,6 +198,7 @@ fn main() {
             set_visualizer_active,
             launcher::hide_launcher,
             launcher::resize_launcher,
+            launcher::launcher_user_name,
             launcher::launcher_search_files,
             launcher::launcher_open_file,
             launcher::launcher_reveal_file,
@@ -418,9 +419,7 @@ fn main() {
                         let _ = win_clone.hide();
                     }
                     // Clicking anywhere else dismisses it, as Spotlight does.
-                    tauri::WindowEvent::Focused(false) => {
-                        let _ = win_clone.hide();
-                    }
+                    tauri::WindowEvent::Focused(false) => launcher::hide_on_blur(&win_clone),
                     _ => {}
                 });
             }

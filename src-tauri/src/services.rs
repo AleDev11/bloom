@@ -29,6 +29,9 @@ static WIN_KEY_DOWN: AtomicBool = AtomicBool::new(false);
 /// Digit (1-9) of the currently held Win+Number combo, 0 when none. Key
 /// auto-repeat re-fires the keydown; only the first press may toggle an app.
 static WIN_NUMBER_HELD: AtomicU8 = AtomicU8::new(0);
+/// True from a Win press until any other key goes down: a lone Win tap opens
+/// Bloom's Start menu when that replaces Windows'.
+static WIN_TAP_ALONE: AtomicBool = AtomicBool::new(false);
 /// Virtual key Microsoft documents as "unassigned", used as the mask key.
 /// See `send_start_menu_mask`.
 const MASK_VK: u16 = 0xE8;
@@ -47,7 +50,9 @@ pub fn setup_keyboard_hook(app_handle: AppHandle) {
     std::thread::spawn(move || {
         // Exiting removes the hook with the process; never touch it mid-shutdown.
         while !SHUTTING_DOWN.load(Ordering::Relaxed) {
-            let wanted = NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) && dock_win_number_enabled();
+            let wanted = (NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed)
+                && dock_win_number_enabled())
+                || crate::launcher::bloom_start_menu_enabled();
             if wanted != (KEYBOARD_HOOK.load(Ordering::Relaxed) != 0) {
                 // A low-level hook runs on the thread that installed it, which
                 // needs a message loop, so install and remove it on the main thread.
@@ -165,6 +170,38 @@ fn emit_dock_win_number(index: u8) {
     });
 }
 
+fn send_key_up(vk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+    };
+    let input = [INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: KEYEVENTF_KEYUP,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }];
+    unsafe {
+        SendInput(&input, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+fn open_bloom_start_menu() {
+    let Some(app) = KEYBOARD_HOOK_APP_HANDLE.get().cloned() else {
+        return;
+    };
+    // Never block the input pipeline: the window work runs on the main thread.
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        crate::launcher::toggle_launcher(&handle, crate::launcher::LauncherMode::Start)
+    });
+}
+
 unsafe extern "system" fn keyboard_hook_proc(
     code: i32,
     wparam: windows::Win32::Foundation::WPARAM,
@@ -185,15 +222,32 @@ unsafe extern "system" fn keyboard_hook_proc(
         if (kb.flags.0 & LLKHF_INJECTED.0) == 0 {
             if vk_code == VK_LWIN || vk_code == VK_RWIN {
                 if is_down {
-                    WIN_KEY_DOWN.store(true, Ordering::Relaxed);
+                    // Auto-repeat re-sends the keydown; only the first starts a tap.
+                    if !WIN_KEY_DOWN.swap(true, Ordering::Relaxed) {
+                        WIN_TAP_ALONE.store(true, Ordering::Relaxed);
+                    }
                     // A fresh Win press always starts a fresh combo, even if the
                     // previous digit's keyup was missed.
                     WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
                 } else if is_up {
                     WIN_KEY_DOWN.store(false, Ordering::Relaxed);
                     WIN_NUMBER_HELD.store(0, Ordering::Relaxed);
+                    if WIN_TAP_ALONE.swap(false, Ordering::Relaxed)
+                        && crate::launcher::bloom_start_menu_enabled()
+                    {
+                        // Explorer must see the mask key before this release, or
+                        // it opens its own Start: hold the release back, send the
+                        // mask, then replay the release (injected, so it passes).
+                        send_start_menu_mask();
+                        send_key_up(vk_code);
+                        open_bloom_start_menu();
+                        return windows::Win32::Foundation::LRESULT(1);
+                    }
                 }
-            } else if WIN_KEY_DOWN.load(Ordering::Relaxed) {
+            } else if is_down && WIN_KEY_DOWN.load(Ordering::Relaxed) {
+                WIN_TAP_ALONE.store(false, Ordering::Relaxed);
+            }
+            if vk_code != VK_LWIN && vk_code != VK_RWIN && WIN_KEY_DOWN.load(Ordering::Relaxed) {
                 if let Some(index) = win_number_index(vk_code.0) {
                     let slot = index + 1;
                     if is_up {

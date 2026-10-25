@@ -95,6 +95,10 @@ export function useSettings() {
 	const [startIcon, setStartIcon] = useState(
 		() => localStorage.getItem("bloom-start-icon") || "default"
 	);
+	// "windows" or "bloom": which Start menu the dock button and Win open.
+	const [startMenu, setStartMenu] = useState(
+		() => localStorage.getItem("bloom-start-menu") || "windows"
+	);
 	const [dockAdaptive, setDockAdaptive] = useState(
 		() => localStorage.getItem("bloom-dock-adaptive") === "true"
 	);
@@ -225,6 +229,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-icon-only"), setDockIconOnly, readBool);
 			apply(getVal("bloom-dock-separator-enabled"), setDockSeparatorEnabled, readBool);
 			apply(getVal("bloom-start-icon"), setStartIcon, (v) => v);
+			apply(getVal("bloom-start-menu"), setStartMenu, (v) => v);
 			apply(getVal("bloom-dock-adaptive"), setDockAdaptive, readBool);
 			apply(getVal("bloom-dock-win-number-enabled"), setDockWinNumberEnabled, readBool);
 			apply(getVal("bloom-dock-extras-position"), setDockExtrasPosition, (v) => v);
@@ -361,6 +366,7 @@ export function useSettings() {
 		"bloom-dock-icon-only": setDockIconOnly,
 		"bloom-dock-separator-enabled": setDockSeparatorEnabled,
 		"bloom-start-icon": setStartIcon,
+		"bloom-start-menu": (v) => setStartMenu(String(v)),
 		"bloom-dock-preview-enabled": setDockPreviewEnabled,
 		"bloom-dock-adaptive": setDockAdaptive,
 		"bloom-dock-win-number-enabled": setDockWinNumberEnabled,
@@ -668,6 +674,11 @@ export function useSettings() {
 	const handleStartIconChange = (icon: string) => {
 		setStartIcon(icon);
 		saveSetting("bloom-start-icon", icon);
+	};
+
+	const handleStartMenuChange = (menu: string) => {
+		setStartMenu(menu);
+		saveSetting("bloom-start-menu", menu);
 	};
 
 	const toggleDockAdaptive = () => {
@@ -1036,6 +1047,8 @@ export function useSettings() {
 		toggleDockSeparator,
 		startIcon,
 		handleStartIconChange,
+		startMenu,
+		handleStartMenuChange,
 		dockAdaptive,
 		toggleDockAdaptive,
 		dockWinNumberEnabled,

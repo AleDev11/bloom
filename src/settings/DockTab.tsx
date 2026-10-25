@@ -19,7 +19,8 @@ import {
 	FolderPlus,
 	Plus,
 	X,
-	MonitorSmartphone
+	MonitorSmartphone,
+	LayoutGrid
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
 import { t, useLanguage } from "../i18n";
@@ -140,6 +141,8 @@ interface DockTabProps {
 	handleRemoveDockExtraFolder: (path: string) => void;
 	startIcon: string;
 	handleStartIconChange: (icon: string) => void;
+	startMenu: string;
+	handleStartMenuChange: (menu: string) => void;
 }
 
 export function DockTab({
@@ -177,7 +180,9 @@ export function DockTab({
 	handleAddDockExtraFolder,
 	handleRemoveDockExtraFolder,
 	startIcon,
-	handleStartIconChange
+	handleStartIconChange,
+	startMenu,
+	handleStartMenuChange
 }: DockTabProps) {
 	useLanguage();
 	const handleStartIconUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -489,6 +494,20 @@ export function DockTab({
 						)}
 
 						<div className="setting-divider" />
+						<SettingRow
+							icon={LayoutGrid}
+							label={t("Start Menu")}
+							desc={t("What the Start button and the Win key open")}
+						>
+							<select
+								className="settings-select"
+								value={startMenu}
+								onChange={(e) => handleStartMenuChange(e.target.value)}
+							>
+								<option value="windows">Windows</option>
+								<option value="bloom">Bloom</option>
+							</select>
+						</SettingRow>
 						<div
 							className="setting-item"
 							style={{ flexDirection: "column", alignItems: "flex-start", gap: "10px" }}

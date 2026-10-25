@@ -247,6 +247,8 @@ function SettingsApp() {
 							handleRemoveDockExtraFolder={settings.handleRemoveDockExtraFolder}
 							startIcon={settings.startIcon}
 							handleStartIconChange={settings.handleStartIconChange}
+							startMenu={settings.startMenu}
+							handleStartMenuChange={settings.handleStartMenuChange}
 						/>
 					)}
 					{activeTab === "overlays" && (

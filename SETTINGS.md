@@ -130,6 +130,7 @@ Example:
 | `bloom-announcement-dismissed` | announcement id      | `""`      | ID of the last dismissed in-app announcement (published via `website/public/announcements.json`).    |
 | `bloom-time-format-24h`        | `"system"` / `"true"` / `"false"` | `"system"` | Clock format in the notch. **system** follows the short-time pattern of Windows' regional format, live. `"true"` = 24-hour, `"false"` = 12-hour with AM/PM. |
 | `bloom-keep-secondary-taskbars` | `"true"` / `"false"` | `"true"` | Leave Windows' taskbar on monitors other than the primary one (the dock only covers the primary). They follow the auto-hide state Bloom sets. Applies after a restart. |
+| `bloom-start-menu`             | `"windows"` / `"bloom"` | `"windows"` | Which Start menu the dock's Start button and a lone Win key tap open. **bloom** uses the launcher window as a Start menu: pinned apps (the dock's pins), all apps A–Z, search, user and power. Win combos (Win+E, Win+L…) are untouched. |
 | `bloom-launcher-enabled`       | `"true"` / `"false"` | `"true"` | Alt+Space opens Bloom's search: apps, files (Windows Search index, user profile only), Windows Settings pages, system actions and a calculator. Off releases the hotkey within a second. |
 | `bloom-language`               | `"system"` / `"en"` / `"es"` | `"system"` | Interface language. **system** follows the Windows display language (Spanish → `es`, anything else → `en`). Webviews switch live; the tray menu switches on restart. |
 

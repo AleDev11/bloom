@@ -9,6 +9,14 @@ export const launcher: Record<string, string> = {
 	"Press Enter again to confirm": "Pulsa Intro otra vez para confirmar",
 	"Ctrl+Enter: show in folder": "Ctrl+Intro: mostrar en la carpeta",
 	"Search (Alt+Space)": "Buscador (Alt+Espacio)",
+
+	// Start menu
+	Pinned: "Anclado",
+	Back: "Atrás",
+	Power: "Inicio/Apagado",
+	"Pin apps to the dock to see them here": "Ancla aplicaciones al dock para verlas aquí",
+	"Start Menu": "Menú Inicio",
+	"What the Start button and the Win key open": "Qué abren el botón Inicio y la tecla Windows",
 	"Find apps, files, settings and actions, and calculate":
 		"Busca aplicaciones, archivos, ajustes y acciones, y calcula",
 

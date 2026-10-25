@@ -4,7 +4,7 @@
 //! Search index. The frontend lives in src/Launcher.tsx.
 
 use serde::Serialize;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -67,7 +67,7 @@ pub fn setup_launcher_hotkey(app: AppHandle) {
                     let app = app.clone();
                     let _ = app
                         .clone()
-                        .run_on_main_thread(move || toggle_launcher(&app));
+                        .run_on_main_thread(move || toggle_launcher(&app, LauncherMode::Search));
                 }
             }
             // A taken hotkey is retried on the next pass, in case it frees up.
@@ -81,21 +81,86 @@ pub fn setup_launcher_hotkey(app: AppHandle) {
     });
 }
 
-/// Shows the launcher centered near the top of the primary monitor, or hides
-/// it when it is already open.
-pub fn toggle_launcher(app: &AppHandle) {
+/// The same window serves as the Alt+Space search and as Bloom's Start menu.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LauncherMode {
+    Search = 1,
+    Start = 2,
+}
+
+impl LauncherMode {
+    fn name(self) -> &'static str {
+        match self {
+            LauncherMode::Search => "search",
+            LauncherMode::Start => "start",
+        }
+    }
+}
+
+const LAUNCHER_WIDTH: f64 = 680.0;
+/// Start mode has a fixed height (pinned apps, all apps, power row).
+const START_HEIGHT: f64 = 640.0;
+/// Space kept free below the Start menu for the dock.
+const START_DOCK_GAP: f64 = 96.0;
+
+static CURRENT_MODE: AtomicU8 = AtomicU8::new(0);
+/// When the launcher last closed because it lost focus.
+static LAST_BLUR_HIDE_MS: AtomicI64 = AtomicI64::new(0);
+
+/// `bloom-start-menu`: "bloom" opens Bloom's Start menu from the dock's Start
+/// button and the Win key; anything else (default "windows") keeps Windows'.
+pub fn bloom_start_menu_enabled() -> bool {
+    crate::state::SETTINGS_CACHE.get().is_some_and(|cache| {
+        cache.lock().is_ok_and(|settings| {
+            settings.get("bloom-start-menu").and_then(|v| v.as_str()) == Some("bloom")
+        })
+    })
+}
+
+/// Clicking outside closes the launcher. A click on whatever opened it would
+/// otherwise reopen it straight away: that press is what took the focus.
+pub fn hide_on_blur(win: &tauri::WebviewWindow) {
+    if win.is_visible().unwrap_or(false) {
+        LAST_BLUR_HIDE_MS.store(crate::utils::get_now_ms(), Ordering::Relaxed);
+        let _ = win.hide();
+    }
+}
+
+/// Shows the launcher in `mode`, or hides it when it is already open in that
+/// mode (the hotkey, the Start button and the Win key all toggle). Search
+/// opens near the top of the primary monitor; Start sits above the dock.
+pub fn toggle_launcher(app: &AppHandle, mode: LauncherMode) {
     let Some(win) = app.get_webview_window("launcher") else {
         return;
     };
-    if win.is_visible().unwrap_or(false) {
+    let visible = win.is_visible().unwrap_or(false);
+    let same_mode = CURRENT_MODE.load(Ordering::Relaxed) == mode as u8;
+    if visible && same_mode {
         let _ = win.hide();
         return;
     }
-    if let (Ok(Some(monitor)), Ok(size)) = (app.primary_monitor(), win.outer_size()) {
+    if !visible
+        && same_mode
+        && crate::utils::get_now_ms() - LAST_BLUR_HIDE_MS.load(Ordering::Relaxed) < 300
+    {
+        return;
+    }
+    CURRENT_MODE.store(mode as u8, Ordering::Relaxed);
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
         let m_pos = monitor.position();
         let m_size = monitor.size();
-        let x = m_pos.x + (m_size.width as i32 - size.width as i32) / 2;
-        let y = m_pos.y + (m_size.height as f64 * 0.22) as i32;
+        let width = (LAUNCHER_WIDTH * scale) as i32;
+        let x = m_pos.x + (m_size.width as i32 - width) / 2;
+        let y = match mode {
+            LauncherMode::Search => m_pos.y + (m_size.height as f64 * 0.22) as i32,
+            LauncherMode::Start => {
+                // The frontend sizes the window to its card; Start's card has
+                // a fixed height, so place it for that height now.
+                let _ = win.set_size(tauri::LogicalSize::new(LAUNCHER_WIDTH, START_HEIGHT));
+                m_pos.y + m_size.height as i32 - ((START_HEIGHT + START_DOCK_GAP) * scale) as i32
+            }
+        };
         let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
     let _ = win.show();
@@ -103,7 +168,7 @@ pub fn toggle_launcher(app: &AppHandle) {
     if let Ok(hwnd) = win.hwnd() {
         unsafe { take_foreground(hwnd) };
     }
-    let _ = app.emit_to("launcher", "launcher-opened", ());
+    let _ = app.emit_to("launcher", "launcher-opened", mode.name());
 }
 
 /// Windows refuses SetForegroundWindow from a background process, and typing
@@ -131,8 +196,31 @@ unsafe fn take_foreground(hwnd: windows::Win32::Foundation::HWND) {
 #[tauri::command]
 pub fn resize_launcher(app: AppHandle, height: f64) {
     if let Some(win) = app.get_webview_window("launcher") {
-        let _ = win.set_size(tauri::LogicalSize::new(680.0, height.clamp(56.0, 560.0)));
+        let _ = win.set_size(tauri::LogicalSize::new(
+            LAUNCHER_WIDTH,
+            height.clamp(56.0, START_HEIGHT + 40.0),
+        ));
     }
+}
+
+/// The signed-in user's display name ("Alejandro Font"), for the Start menu's
+/// footer; the account name when Windows has no display name for it.
+#[tauri::command]
+pub fn launcher_user_name() -> String {
+    use windows::Win32::Security::Authentication::Identity::{GetUserNameExW, NameDisplay};
+    let mut buffer = [0u16; 256];
+    let mut size = buffer.len() as u32;
+    let ok = unsafe {
+        GetUserNameExW(
+            NameDisplay,
+            Some(windows::core::PWSTR(buffer.as_mut_ptr())),
+            &mut size,
+        )
+    };
+    if ok && size > 0 {
+        return String::from_utf16_lossy(&buffer[..size as usize]);
+    }
+    std::env::var("USERNAME").unwrap_or_default()
 }
 
 #[tauri::command]

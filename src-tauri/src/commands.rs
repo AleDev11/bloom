@@ -663,7 +663,14 @@ fn toggle_start_menu() {
 #[tauri::command]
 pub async fn open_app(app: AppHandle, app_name: String) {
     if app_name == "start" {
-        toggle_start_menu();
+        if crate::launcher::bloom_start_menu_enabled() {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                crate::launcher::toggle_launcher(&handle, crate::launcher::LauncherMode::Start)
+            });
+        } else {
+            toggle_start_menu();
+        }
         return;
     }
 

@@ -25,6 +25,8 @@ import { initTheme } from "./theme";
 import { locale, t, useLanguage } from "./i18n";
 import { evaluate, looksLikeMath } from "./launcher/calc";
 import { ACTIONS, SETTINGS_PAGES, score, type ActionId } from "./launcher/catalog";
+import { StartHome } from "./launcher/StartHome";
+import { useIcon } from "./launcher/useIcon";
 import "./Launcher.css";
 
 interface AppInfo {
@@ -68,30 +70,6 @@ const ACTION_ICONS: Record<ActionId, typeof Lock> = {
 	quit_bloom: X
 };
 
-// Icons survive between openings; get_app_icon also caches them on disk.
-const iconCache = new Map<string, string | null>();
-
-function useIcon(path: string | null): string | null {
-	const [icon, setIcon] = useState(() => (path ? (iconCache.get(path) ?? null) : null));
-	useEffect(() => {
-		if (!path || iconCache.has(path)) {
-			setIcon(path ? (iconCache.get(path) ?? null) : null);
-			return;
-		}
-		let alive = true;
-		invoke<string | null>("get_app_icon", { path, name: null, hwnd: null })
-			.then((data) => {
-				iconCache.set(path, data);
-				if (alive) setIcon(data);
-			})
-			.catch(() => iconCache.set(path, null));
-		return () => {
-			alive = false;
-		};
-	}, [path]);
-	return icon;
-}
-
 function ItemIcon({ item }: { item: Item }) {
 	const iconPath =
 		item.kind === "app" ? item.app.path : item.kind === "file" ? item.file.path : null;
@@ -123,6 +101,13 @@ function LauncherApp() {
 	const [files, setFiles] = useState<FileHit[]>([]);
 	const [selected, setSelected] = useState(0);
 	const [confirming, setConfirming] = useState<string | null>(null);
+	// "search" (Alt+Space) or "start" (the dock's Start button, or Win when
+	// Bloom's Start menu replaces Windows').
+	const [mode, setMode] = useState<"search" | "start">("search");
+	const [pinned, setPinned] = useState<AppInfo[]>([]);
+	const [userName, setUserName] = useState("");
+	// Remounts the Start home on each opening, so it starts on Pinned.
+	const [openCount, setOpenCount] = useState(0);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const cardRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
@@ -136,11 +121,24 @@ function LauncherApp() {
 			.catch(() => {});
 	}, []);
 
-	// Each opening starts from the last query, selected, like Spotlight.
+	// Search reopens on the last query, selected, like Spotlight; Start opens
+	// empty, like Windows'.
 	useEffect(() => {
 		loadApps();
-		const unlisten = listen("launcher-opened", () => {
+		invoke<string>("launcher_user_name")
+			.then(setUserName)
+			.catch(() => {});
+		const unlisten = listen<string>("launcher-opened", (event) => {
+			const next = event.payload === "start" ? "start" : "search";
+			setMode(next);
 			loadApps();
+			if (next === "start") {
+				setQuery("");
+				setOpenCount((n) => n + 1);
+				invoke<AppInfo[]>("load_pinned_apps")
+					.then((apps) => setPinned(apps.filter((app) => app.path !== "start")))
+					.catch(() => {});
+			}
 			setConfirming(null);
 			setSelected(0);
 			requestAnimationFrame(() => {
@@ -324,7 +322,9 @@ function LauncherApp() {
 
 	let lastKind: Item["kind"] | null = null;
 	return (
-		<div className="launcher-card" ref={cardRef}>
+		// Keys bubble here from the input and from Start's buttons alike, so
+		// Esc works wherever the focus is.
+		<div className={`launcher-card ${mode}`} ref={cardRef} onKeyDown={onKeyDown}>
 			<div className="launcher-search">
 				<Search className="launcher-search-icon" size={20} strokeWidth={2} />
 				<input
@@ -339,9 +339,27 @@ function LauncherApp() {
 						setSelected(0);
 						setConfirming(null);
 					}}
-					onKeyDown={onKeyDown}
 				/>
 			</div>
+			{mode === "start" && !query.trim() && (
+				<StartHome
+					key={openCount}
+					pinned={pinned}
+					apps={apps}
+					userName={userName}
+					onLaunch={(app) => {
+						hide();
+						invoke("open_app", { appName: app.path }).catch(() => {});
+					}}
+					onAction={(action) => {
+						invoke("launcher_run_action", { action }).catch(() => {});
+					}}
+					onUser={() => {
+						hide();
+						invoke("launcher_open_settings_page", { uri: "ms-settings:yourinfo" }).catch(() => {});
+					}}
+				/>
+			)}
 			{query.trim() && (
 				<div className="launcher-results" ref={listRef}>
 					{items.length === 0 && <div className="launcher-empty">{t("No results")}</div>}
