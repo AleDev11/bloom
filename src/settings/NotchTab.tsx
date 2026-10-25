@@ -264,7 +264,8 @@ export function NotchTab({
 				</SettingRow>
 
 				{musicModeEnabled && (
-					<>
+					<details className="settings-disclosure">
+						<summary>Music options <span>Layout and visual effects</span></summary>
 						<SettingRow
 							icon={Minimize2}
 							label="Compact Mode"
@@ -323,7 +324,7 @@ export function NotchTab({
 								<span className="slider"></span>
 							</label>
 						</SettingRow>
-					</>
+					</details>
 				)}
 			</div>
 
@@ -417,7 +418,10 @@ export function NotchTab({
 
 			<div className="setting-group-label">Widgets</div>
 			<div className="setting-group">
-				<StatusWidgetConfig value={statusWidgets} onChange={handleWidgetsChange} />
+				<details className="settings-disclosure settings-disclosure-standalone">
+					<summary>Choose status widgets <span>Arrange what appears beside the clock</span></summary>
+					<StatusWidgetConfig value={statusWidgets} onChange={handleWidgetsChange} />
+				</details>
 			</div>
 		</>
 	);
