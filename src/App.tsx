@@ -561,7 +561,7 @@ function App() {
 	}, []);
 
 	const [notchMode, setNotchMode] = useState(() => {
-		const raw = localStorage.getItem("bloom-notch-mode") || "fixed";
+		const raw = localStorage.getItem("bloom-notch-mode") || "smart";
 		if (raw === "auto-hide") return "smart";
 		return raw;
 	});
@@ -1048,7 +1048,7 @@ function App() {
 				const thresholdStr = getVal("bloom-low-battery-threshold", "20");
 				if (thresholdStr) setLowBatteryThreshold(parseInt(thresholdStr as string));
 
-				const nMode = getVal("bloom-notch-mode", "fixed");
+				const nMode = getVal("bloom-notch-mode", "smart");
 				if (nMode) {
 					const mapped = nMode === "auto-hide" ? "smart" : nMode;
 					setNotchMode(mapped);

@@ -3693,9 +3693,10 @@ fn set_main_appbar_reservation(main_win: tauri::WebviewWindow, reserve: bool) {
 
 /// Whether the notch's 40px top strip should currently be reserved as an AppBar.
 /// Only fixed mode reserves screen space; smart and peek hide the notch freely.
-/// An unset mode defaults to fixed, matching SETTINGS.md and `re_register_appbars`.
+/// An unset mode defaults to smart, matching SETTINGS.md: a reserved strip
+/// leaves a gap above maximized windows.
 fn notch_mode_reserves_work_area(mode: Option<&str>) -> bool {
-    mode.map(|m| m == "fixed").unwrap_or(true)
+    mode == Some("fixed")
 }
 
 /// Bring the main AppBar registration in line with the configured notch mode.
@@ -4631,8 +4632,8 @@ mod tests {
         assert!(!notch_mode_reserves_work_area(Some("peek")));
         // Legacy alias for smart
         assert!(!notch_mode_reserves_work_area(Some("auto-hide")));
-        // Unset defaults to fixed, matching SETTINGS.md
-        assert!(notch_mode_reserves_work_area(None));
+        // Unset defaults to smart, matching SETTINGS.md
+        assert!(!notch_mode_reserves_work_area(None));
     }
 
     #[test]

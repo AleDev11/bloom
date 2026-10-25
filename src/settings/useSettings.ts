@@ -133,7 +133,7 @@ export function useSettings() {
 		const val = localStorage.getItem("bloom-dock-edge-delay");
 		return val !== null ? parseInt(val) : 200;
 	});
-	const [notchMode, setNotchMode] = useState("fixed");
+	const [notchMode, setNotchMode] = useState("smart");
 	const [notchEdgeDelay, setNotchEdgeDelay] = useState(() => {
 		const val = localStorage.getItem("bloom-notch-edge-delay");
 		return val !== null ? parseInt(val) : 200;
