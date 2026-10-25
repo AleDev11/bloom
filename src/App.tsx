@@ -301,6 +301,17 @@ function GreenDownArrowIcon() {
 	);
 }
 
+// Mounted, playing visualizers. The backend captures audio only while there is
+// at least one, so tell it when the count crosses zero.
+let activeVisualizers = 0;
+function trackVisualizer(delta: 1 | -1) {
+	const wasActive = activeVisualizers > 0;
+	activeVisualizers = Math.max(0, activeVisualizers + delta);
+	if (wasActive !== activeVisualizers > 0) {
+		invoke("set_visualizer_active", { active: activeVisualizers > 0 }).catch(() => {});
+	}
+}
+
 export const Visualizer = memo(function Visualizer({
 	isPlaying,
 	bars = 5,
@@ -326,8 +337,10 @@ export const Visualizer = memo(function Visualizer({
 			while (data.length < bars) data.push(0.18);
 			setAudioData(data);
 		});
+		trackVisualizer(1);
 
 		return () => {
+			trackVisualizer(-1);
 			unlisten.then((fn) => fn());
 		};
 	}, [isPlaying, bars]);
@@ -412,6 +425,9 @@ interface WifiStatus {
 	connected: boolean;
 	ssid: string | null;
 }
+
+/** Status widgets that show polled system metrics. */
+const METRIC_WIDGETS = ["cpu", "ram", "disk", "net"];
 
 /** Mirrors `RadioPresence` in src-tauri/src/types.rs. */
 interface RadioPresence {
@@ -2255,15 +2271,21 @@ function App() {
 		invoke<number>("get_brightness")
 			.then(setCurrentBrightness)
 			.catch(() => {});
+	}, []);
 
-		// Poll battery saver state every 5s (since we can't listen for changes)
-		const interval = setInterval(() => {
+	// Battery saver has no change event. Its state shows in the command
+	// center, so poll only while that is open (the battery tooltip refreshes
+	// it on hover).
+	useEffect(() => {
+		if (bloomMode !== "command-center") return;
+		const refresh = () =>
 			invoke<boolean>("get_battery_saver_state")
 				.then(setBatterySaverEnabled)
 				.catch(() => {});
-		}, 5000);
+		refresh();
+		const interval = setInterval(refresh, 5000);
 		return () => clearInterval(interval);
-	}, []);
+	}, [bloomMode]);
 
 	// Refresh Wi-Fi status while the command center is open so changes made
 	// outside Bloom (keyboard toggle, Windows quick settings) show up.
@@ -2274,8 +2296,13 @@ function App() {
 		return () => clearInterval(interval);
 	}, [bloomMode, refreshWifiStatus]);
 
-	// Poll system metrics for status widgets
+	// Poll system metrics for status widgets. They render only while the notch
+	// is hovered, so poll only then, and only for a configured metric widget.
+	const showsMetrics =
+		isHovered &&
+		[...statusWidgets.left, ...statusWidgets.right].some((id) => METRIC_WIDGETS.includes(id));
 	useEffect(() => {
+		if (!showsMetrics) return;
 		const fetchMetrics = () => {
 			invoke<number>("get_cpu_usage")
 				.then(setCpuUsage)
@@ -2296,7 +2323,7 @@ function App() {
 		fetchMetrics();
 		const interval = setInterval(fetchMetrics, 3000);
 		return () => clearInterval(interval);
-	}, []);
+	}, [showsMetrics]);
 
 	// Listen for brightness changes
 	useEffect(() => {
@@ -2553,6 +2580,11 @@ function App() {
 		invoke<BatteryDetails>("get_battery_details")
 			.then(setBatteryDetails)
 			.catch((err) => console.error("Failed to read battery details:", err));
+		// The tooltip mentions battery saver, which is not polled outside the
+		// command center.
+		invoke<boolean>("get_battery_saver_state")
+			.then(setBatterySaverEnabled)
+			.catch(() => {});
 	}, []);
 
 	// Battery Saver - opens settings (no public API to toggle without admin)

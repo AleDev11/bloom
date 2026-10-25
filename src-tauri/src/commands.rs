@@ -3822,6 +3822,11 @@ pub fn get_system_theme() -> &'static str {
 }
 
 #[tauri::command]
+pub fn set_visualizer_active(active: bool) {
+    VISUALIZER_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+#[tauri::command]
 pub fn get_system_locale() -> crate::types::SystemLocale {
     windows_locale()
 }

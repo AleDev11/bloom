@@ -194,6 +194,7 @@ fn main() {
             get_system_accent_color,
             get_system_theme,
             get_system_locale,
+            set_visualizer_active,
             get_cpu_usage,
             get_ram_usage,
             get_disk_space,

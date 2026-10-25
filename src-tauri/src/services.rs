@@ -472,6 +472,10 @@ unsafe extern "system" fn focus_event_proc(
 
     // Keep the thumbnail cache warm for the focused window so that hovering a
     // later-minimized window uses the cached image instead of restoring it.
+    // Capturing makes the app repaint, so skip it when no preview will show.
+    if !crate::utils::dock_enabled() || !dock_previews_enabled() {
+        return;
+    }
     std::thread::spawn(move || {
         use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, IsIconic, IsWindow};
 
@@ -518,6 +522,18 @@ unsafe extern "system" fn focus_event_proc(
 }
 
 static THUMB_CAPTURE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// `bloom-dock-preview-enabled`, on unless set to "false".
+fn dock_previews_enabled() -> bool {
+    SETTINGS_CACHE.get().is_none_or(|cache| {
+        cache.lock().is_ok_and(|settings| {
+            settings
+                .get("bloom-dock-preview-enabled")
+                .and_then(|v| v.as_str())
+                != Some("false")
+        })
+    })
+}
 
 const MAX_CACHED_THUMBNAILS: usize = 15;
 
@@ -640,11 +656,16 @@ unsafe extern "system" fn taskbar_event_proc(
     _h_win_event_hook: windows::Win32::UI::Accessibility::HWINEVENTHOOK,
     _event: u32,
     hwnd: HWND,
-    _id_object: i32,
+    id_object: i32,
     _id_child: i32,
     _dw_event_thread: u32,
     _dwms_event_time: u32,
 ) {
+    // The location hook is system-wide and also fires for carets, cursors and
+    // scrollbars many times a second; only a window event can be the taskbar.
+    if id_object != windows::Win32::UI::WindowsAndMessaging::OBJID_WINDOW.0 || hwnd.is_invalid() {
+        return;
+    }
     if NATIVE_TASKBAR_HIDDEN.load(Ordering::Relaxed) {
         let mut class_name = [0u8; 256];
         let len = windows::Win32::UI::WindowsAndMessaging::GetClassNameA(hwnd, &mut class_name);
@@ -749,8 +770,15 @@ pub fn setup_audio_visualization(app_handle: AppHandle) {
                     let fft = planner.plan_fft_forward(FFT_SIZE);
 
                     let mut last_device_check = std::time::Instant::now();
+                    let mut capturing = true;
                     loop {
-                        std::thread::sleep(std::time::Duration::from_millis(32));
+                        // Stopped, the loopback stream fills no buffer, so a slow
+                        // wake only has to notice when a visualizer needs it again.
+                        std::thread::sleep(std::time::Duration::from_millis(if capturing {
+                            32
+                        } else {
+                            250
+                        }));
 
                         if last_device_check.elapsed().as_secs() >= 2 {
                             last_device_check = std::time::Instant::now();
@@ -769,39 +797,30 @@ pub fn setup_audio_visualization(app_handle: AppHandle) {
                             }
                         }
 
-                        // Skip all heavy processing if nothing is playing
-                        if !ANY_MEDIA_PLAYING.load(Ordering::Relaxed) {
-                            // Still gotta clear the buffer to avoid lag when it starts
-                            loop {
-                                let len = match capture_client.GetNextPacketSize() {
-                                    Ok(l) => l,
-                                    Err(_) => {
-                                        return Err("Device invalidated".into());
-                                    }
-                                };
-                                if len == 0 {
-                                    break;
-                                }
-                                let mut data_ptr: *mut u8 = std::ptr::null_mut();
-                                let mut num_frames = 0u32;
-                                let mut flags = 0u32;
-                                if capture_client
-                                    .GetBuffer(
-                                        &mut data_ptr,
-                                        &mut num_frames,
-                                        &mut flags,
-                                        None,
-                                        None,
-                                    )
-                                    .is_err()
-                                {
-                                    return Err("Device invalidated".into());
-                                }
-                                let _ = capture_client.ReleaseBuffer(num_frames);
+                        // Capture only while something plays and a visualizer is on
+                        // screen to show it.
+                        let wanted = ANY_MEDIA_PLAYING.load(Ordering::Relaxed)
+                            && VISUALIZER_ACTIVE.load(Ordering::Relaxed);
+                        if !wanted {
+                            if capturing {
+                                let _ = audio_client.Stop();
+                                // Drop stale audio so bars restart from live sound.
+                                let _ = audio_client.Reset();
+                                capturing = false;
+                                buffer_pos = 0;
                             }
                             continue;
                         }
+                        if !capturing {
+                            audio_client
+                                .Start()
+                                .map_err(|e| format!("Start failed: {:?}", e))?;
+                            capturing = true;
+                        }
 
+                        // One event per wake (about 30 a second) carrying the latest
+                        // bands, instead of one per FFT block.
+                        let mut latest_bands: Option<[f32; NUM_BANDS]> = None;
                         let mut device_invalidated = false;
                         loop {
                             let packet_length = match capture_client.GetNextPacketSize() {
@@ -908,17 +927,23 @@ pub fn setup_audio_visualization(app_handle: AppHandle) {
                                             output[band_idx] = output[band_idx].clamp(0.18, 1.0);
                                             prev_values[band_idx] = output[band_idx];
                                         }
-                                        let _ = app_handle.emit(
-                                            "audio-visualization",
-                                            AudioVisualizationData {
-                                                frequencies: output.to_vec(),
-                                            },
-                                        );
+                                        latest_bands = Some(output);
                                         buffer_pos = 0;
                                     }
                                 }
                                 let _ = capture_client.ReleaseBuffer(num_frames);
                             }
+                        }
+
+                        if let Some(bands) = latest_bands {
+                            // Only the notch draws the visualizer.
+                            let _ = app_handle.emit_to(
+                                "main",
+                                "audio-visualization",
+                                AudioVisualizationData {
+                                    frequencies: bands.to_vec(),
+                                },
+                            );
                         }
 
                         if device_invalidated {
