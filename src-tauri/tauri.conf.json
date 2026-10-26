@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bun run build:filee && bun run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -126,6 +126,9 @@
     "publisher": "Sehajveer Singh",
     "copyright": "Copyright © 2026 Sehajveer Singh",
     "category": "Utility",
+    "resources": {
+      "resources/filee/": "filee/"
+    },
     "shortDescription": "A notch and dock for Windows",
     "longDescription": "Bloom replaces the Windows taskbar with a dock and adds a notch for media, quick controls and status.",
     "windows": {

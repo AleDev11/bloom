@@ -1641,6 +1641,143 @@ img {
 	opacity: 1;
 }
 
+/* Convert with Filee: the other top corner of a file tile. */
+.shelf-tile-convert {
+	position: absolute;
+	top: 4px;
+	left: 4px;
+	width: 18px;
+	height: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.55);
+	color: #fff;
+	opacity: 0;
+	cursor: pointer;
+	padding: 0;
+	transition: opacity 0.12s ease;
+}
+
+.shelf-tile:hover .shelf-tile-convert {
+	opacity: 1;
+}
+
+.shelf-convert {
+	position: absolute;
+	inset: 8px 10px;
+	z-index: 4;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px 12px;
+	border-radius: 12px;
+	background: var(--bloom-bg-expanded, rgba(20, 20, 22, 0.96));
+	border: 1px solid var(--bloom-border, rgba(255, 255, 255, 0.12));
+	overflow: hidden;
+}
+
+.shelf-convert-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.shelf-convert-title {
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.shelf-convert-close {
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: inherit;
+	cursor: pointer;
+	padding: 0;
+}
+
+.shelf-convert-formats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	overflow-y: auto;
+	align-content: flex-start;
+}
+
+.shelf-convert-chip {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	border: none;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--bloom-text, white) 10%, transparent);
+	color: inherit;
+	font: inherit;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.shelf-convert-chip:hover:not(:disabled) {
+	background: var(--bloom-accent, #007aff);
+	color: #fff;
+}
+
+.shelf-convert-chip:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.shelf-convert-chip.busy {
+	opacity: 1;
+	background: var(--bloom-accent, #007aff);
+	color: #fff;
+}
+
+.shelf-convert-status {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: 11.5px;
+	color: var(--bloom-text-muted, rgba(255, 255, 255, 0.7));
+}
+
+/* "More…": Filee's own radial menu, set apart from the format chips. */
+.shelf-convert-chip.more {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--bloom-border, rgba(255, 255, 255, 0.2));
+}
+
+.shelf-convert-error {
+	font-size: 11px;
+	color: #ff6b5f;
+}
+
+.spin {
+	animation: bloom-spin 0.9s linear infinite;
+}
+
+@keyframes bloom-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* Announcement card */
 .announcement-content {
 	position: absolute;

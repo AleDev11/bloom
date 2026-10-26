@@ -3170,6 +3170,7 @@ pub fn release_appbars(handle: &AppHandle) {
 pub fn restore_taskbar_and_exit(handle: &AppHandle) {
     crate::diagnostics::record("shutdown", "restoring taskbar and releasing AppBars");
     SHUTTING_DOWN.store(true, Ordering::Relaxed);
+    crate::filee::stop_radial(handle);
     release_appbars(handle);
     set_taskbar_visibility(true, true);
     NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
@@ -3191,6 +3192,7 @@ pub async fn quit_bloom(handle: AppHandle) {
 pub async fn restart_bloom(handle: AppHandle) {
     crate::diagnostics::record("restart", "restoring taskbar and releasing AppBars");
     SHUTTING_DOWN.store(true, Ordering::Relaxed);
+    crate::filee::stop_radial(&handle);
     release_appbars(&handle);
     if let Some(w) = handle.get_webview_window("settings") {
         let _ = w.destroy();
@@ -3253,6 +3255,10 @@ pub fn save_setting(app: AppHandle, key: String, value: serde_json::Value) -> Re
 
     if key == "bloom-scale" {
         re_register_appbars(&app, &settings);
+    }
+    if key == "bloom-filee-radial" {
+        let enabled = settings[&key].as_str() != Some("false");
+        crate::filee::apply_radial(&app, enabled);
     }
     Ok(())
 }

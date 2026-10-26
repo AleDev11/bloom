@@ -343,6 +343,14 @@ pub(crate) fn is_noise_path(path: &str) -> bool {
     NOISE.iter().any(|folder| lower.contains(folder))
 }
 
+/// Lets the launcher open files it produced itself (a Filee conversion of a
+/// search result), alongside the latest search results.
+pub fn allow_results(paths: &[String]) {
+    if let Ok(mut last) = LAST_FILE_RESULTS.lock() {
+        last.extend(paths.iter().cloned());
+    }
+}
+
 fn was_found(path: &str) -> bool {
     LAST_FILE_RESULTS
         .lock()

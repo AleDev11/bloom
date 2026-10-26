@@ -55,8 +55,10 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	Inbox,
-	Music
+	Music,
+	ArrowRightLeft
 } from "lucide-react";
+import { ShelfConvert } from "./components/ShelfConvert";
 
 /**
  * The notch has two kinds of content:
@@ -1602,6 +1604,8 @@ function App() {
 			for (const id of ids) shelfNewIdsRef.current.delete(id);
 		}, 900);
 	};
+	// The file whose "Convert to…" card (Filee) is open in the shelf.
+	const [convertItem, setConvertItem] = useState<ShelfItem | null>(null);
 	const [shelfNotice, setShelfNotice] = useState<string | null>(null);
 	const shelfNoticeTimer = useRef<number | null>(null);
 	const showShelfNotice = (message: string) => {
@@ -4073,6 +4077,18 @@ function App() {
 											transition={{ type: "spring", stiffness: 400, damping: 30 }}
 										>
 											{shelfNotice && <div className="shelf-notice">{shelfNotice}</div>}
+											{convertItem?.path && (
+												<ShelfConvert
+													name={convertItem.name}
+													path={convertItem.path}
+													onClose={() => setConvertItem(null)}
+													onConverted={(outputs, format) => {
+														setConvertItem(null);
+														addShelfItems(outputs);
+														showShelfNotice(t("Converted to {format}", { format: format.toUpperCase() }));
+													}}
+												/>
+											)}
 											{shelfItems.length === 0 ? (
 												<div className="shelf-empty">
 													<span>{t("Drop files or selected text here")}</span>
@@ -4158,6 +4174,18 @@ function App() {
 																			? t("Text · {count} chars", { count: item.text?.length ?? 0 })
 																			: item.name}
 																	</span>
+																	{item.type === "file" && item.path && (
+																		<button
+																			className="shelf-tile-convert"
+																			title={t("Convert with Filee")}
+																			onClick={(e) => {
+																				e.stopPropagation();
+																				setConvertItem(item);
+																			}}
+																		>
+																			<ArrowRightLeft size={10} strokeWidth={2.5} />
+																		</button>
+																	)}
 																	<button
 																		className="shelf-tile-remove"
 																		title={t("Remove from shelf")}

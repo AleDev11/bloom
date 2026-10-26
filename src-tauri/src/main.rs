@@ -5,6 +5,7 @@ mod bluetooth;
 mod commands;
 mod diagnostics;
 mod dock_extras;
+mod filee;
 mod launcher;
 mod services;
 mod shelf;
@@ -199,6 +200,11 @@ fn main() {
             launcher::hide_launcher,
             launcher::resize_launcher,
             launcher::launcher_user_name,
+            filee::filee_status,
+            filee::filee_targets,
+            filee::filee_convert,
+            filee::filee_open_radial,
+            filee::filee_open_app,
             launcher::launcher_search_files,
             launcher::launcher_open_file,
             launcher::launcher_reveal_file,
@@ -384,6 +390,7 @@ fn main() {
             let _ = COMMAND_SENDER.set(tx.clone());
             services::setup_keyboard_hook(app.handle().clone());
             launcher::setup_launcher_hotkey(app.handle().clone());
+            filee::start_radial(app.handle());
             setup_taskbar_hook();
             setup_audio_visualization(app.handle().clone());
             setup_settings_watcher(app.handle().clone());
@@ -462,6 +469,7 @@ fn main() {
                         "quit" => {
                             diagnostics::record("shutdown", "source=tray");
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
+                            filee::stop_radial(&ah);
                             crate::commands::release_appbars(&ah);
                             set_taskbar_visibility(true, true);
                             NATIVE_TASKBAR_HIDDEN.store(false, Ordering::Relaxed);
@@ -472,6 +480,7 @@ fn main() {
                         "restart" => {
                             diagnostics::record("restart", "source=tray");
                             SHUTTING_DOWN.store(true, Ordering::Relaxed);
+                            filee::stop_radial(&ah);
                             crate::commands::release_appbars(&ah);
                             if let Some(w) = ah.get_webview_window("settings") {
                                 let _ = w.destroy();

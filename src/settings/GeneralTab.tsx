@@ -7,10 +7,15 @@ import {
 	RotateCcw,
 	LogOut,
 	Languages,
-	Search
+	Search,
+	ArrowRightLeft,
+	MousePointerClick
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingRow } from "./SettingRow";
 import { LANGUAGES, t, useLanguage } from "../i18n";
+import { invoke } from "@tauri-apps/api/core";
+import { FILEE_URL, useFilee } from "../filee";
 
 interface GeneralTabProps {
 	autostart: boolean;
@@ -21,6 +26,8 @@ interface GeneralTabProps {
 	handleLanguageChange: (value: string) => void;
 	launcherEnabled: boolean;
 	toggleLauncher: () => void;
+	fileeRadial: boolean;
+	toggleFileeRadial: () => void;
 	showUpdateIndicator: boolean;
 	toggleUpdateIndicator: () => void;
 	lowBatteryThreshold: number;
@@ -39,6 +46,8 @@ export function GeneralTab({
 	handleLanguageChange,
 	launcherEnabled,
 	toggleLauncher,
+	fileeRadial,
+	toggleFileeRadial,
 	showUpdateIndicator,
 	toggleUpdateIndicator,
 	lowBatteryThreshold,
@@ -129,6 +138,11 @@ export function GeneralTab({
 				</SettingRow>
 			</div>
 
+			<div className="setting-group-label">{t("File conversion")}</div>
+			<div className="setting-group">
+				<FileeRows radial={fileeRadial} toggleRadial={toggleFileeRadial} />
+			</div>
+
 			<div className="setting-group-label">{t("App")}</div>
 			<div className="setting-group">
 				<SettingRow
@@ -156,6 +170,51 @@ export function GeneralTab({
 					divider={false}
 				/>
 			</div>
+		</>
+	);
+}
+
+/**
+ * Filee, which Bloom ships for converting files: what it is, its own window
+ * (presets, optional engines), and the radial menu its app adds in the tray.
+ */
+function FileeRows({ radial, toggleRadial }: { radial: boolean; toggleRadial: () => void }) {
+	useLanguage();
+	const filee = useFilee();
+	const status = filee.status;
+	if (status && !status.installed) {
+		return (
+			<SettingRow
+				icon={ArrowRightLeft}
+				label="Filee"
+				desc={t("Filee isn't included in this build of Bloom")}
+				action
+				divider={false}
+				onClick={() => openUrl(FILEE_URL)}
+			/>
+		);
+	}
+	const version = status?.version ? t("Version {version}", { version: status.version }) : "";
+	return (
+		<>
+			<SettingRow
+				icon={ArrowRightLeft}
+				label={t("Open Filee")}
+				desc={[t("Presets, quality and optional engines"), version].filter(Boolean).join(" · ")}
+				action
+				onClick={() => invoke("filee_open_app").catch(() => {})}
+			/>
+			<SettingRow
+				icon={MousePointerClick}
+				label={t("Radial Menu")}
+				desc={t("Hold Ctrl while dragging files to convert them anywhere")}
+				divider={false}
+			>
+				<label className="toggle-switch">
+					<input type="checkbox" checked={radial} onChange={toggleRadial} />
+					<span className="slider"></span>
+				</label>
+			</SettingRow>
 		</>
 	);
 }

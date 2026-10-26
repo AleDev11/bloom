@@ -127,6 +127,9 @@ export function useSettings() {
 	const [launcherEnabled, setLauncherEnabled] = useState(
 		() => localStorage.getItem("bloom-launcher-enabled") !== "false"
 	);
+	const [fileeRadial, setFileeRadial] = useState(
+		() => localStorage.getItem("bloom-filee-radial") !== "false"
+	);
 	const [dockExtrasFolders, setDockExtrasFolders] = useState(
 		() => localStorage.getItem("bloom-dock-extras-folders") ?? DEFAULT_ENABLED_FOLDERS
 	);
@@ -238,6 +241,7 @@ export function useSettings() {
 			apply(getVal("bloom-dock-task-view"), setDockTaskView, readBool);
 			apply(getVal("bloom-keep-secondary-taskbars"), setKeepSecondaryTaskbars, readBool);
 			apply(getVal("bloom-launcher-enabled"), setLauncherEnabled, readBool);
+			apply(getVal("bloom-filee-radial"), setFileeRadial, readBool);
 			apply(getVal("bloom-dock-extras-hidden-drives"), setDockExtrasHiddenDrives, (v) => v);
 			apply(getVal("bloom-dock-extras-folders"), setDockExtrasFolders, (v) => v);
 			apply(getVal("bloom-dock-extras-custom-folders"), setDockExtrasCustomFolders, (v) => v);
@@ -376,6 +380,7 @@ export function useSettings() {
 		"bloom-dock-task-view": setDockTaskView,
 		"bloom-keep-secondary-taskbars": setKeepSecondaryTaskbars,
 		"bloom-launcher-enabled": setLauncherEnabled,
+		"bloom-filee-radial": setFileeRadial,
 		"bloom-dock-extras-hidden-drives": setDockExtrasHiddenDrives,
 		"bloom-dock-extras-folders": setDockExtrasFolders,
 		"bloom-dock-extras-custom-folders": setDockExtrasCustomFolders,
@@ -714,6 +719,12 @@ export function useSettings() {
 		const next = !dockExtrasRecycleBin;
 		setDockExtrasRecycleBin(next);
 		saveSetting("bloom-dock-extras-recycle-bin", String(next));
+	};
+
+	const toggleFileeRadial = () => {
+		const next = !fileeRadial;
+		setFileeRadial(next);
+		saveSetting("bloom-filee-radial", String(next));
 	};
 
 	const toggleLauncher = () => {
@@ -1067,6 +1078,8 @@ export function useSettings() {
 		toggleKeepSecondaryTaskbars,
 		launcherEnabled,
 		toggleLauncher,
+		fileeRadial,
+		toggleFileeRadial,
 		dockExtrasFolders,
 		toggleDockExtraFolder,
 		dockExtrasCustomFolders,

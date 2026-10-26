@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
 	AppWindow,
+	ArrowRightLeft,
+	Info,
 	Calculator,
 	File,
 	Flower2,
@@ -27,6 +29,7 @@ import { evaluate, looksLikeMath } from "./launcher/calc";
 import { ACTIONS, SETTINGS_PAGES, score, type ActionId } from "./launcher/catalog";
 import { StartHome } from "./launcher/StartHome";
 import { useIcon } from "./launcher/useIcon";
+import { fileeConvert, fileeTargets, formatLabel, useFilee } from "./filee";
 import "./Launcher.css";
 
 interface AppInfo {
@@ -46,9 +49,13 @@ type Item =
 	| { kind: "app"; key: string; title: string; app: AppInfo }
 	| { kind: "file"; key: string; title: string; file: FileHit }
 	| { kind: "setting"; key: string; title: string; uri: string }
-	| { kind: "action"; key: string; title: string; action: ActionId; confirm: boolean };
+	| { kind: "action"; key: string; title: string; action: ActionId; confirm: boolean }
+	| { kind: "convert"; key: string; title: string; format: string }
+	| { kind: "install"; key: string; title: string };
 
 const SECTION_TITLES: Record<Item["kind"], string> = {
+	convert: "Convert to",
+	install: "Filee",
 	calc: "Calculator",
 	app: "Apps",
 	setting: "Settings",
@@ -86,7 +93,11 @@ function ItemIcon({ item }: { item: Item }) {
 						: File
 					: item.kind === "setting"
 						? SettingsIcon
-						: ACTION_ICONS[item.action];
+						: item.kind === "convert"
+							? ArrowRightLeft
+							: item.kind === "install"
+								? Info
+								: ACTION_ICONS[item.action];
 	return <Icon className="launcher-item-glyph" size={18} strokeWidth={1.8} />;
 }
 
@@ -108,6 +119,13 @@ function LauncherApp() {
 	const [userName, setUserName] = useState("");
 	// Remounts the Start home on each opening, so it starts on Pinned.
 	const [openCount, setOpenCount] = useState(0);
+	// Tab on a file result lists what Filee converts it to; Esc goes back.
+	const filee = useFilee();
+	const [convertFile, setConvertFile] = useState<FileHit | null>(null);
+	const [convertTargets, setConvertTargets] = useState<string[] | null>(null);
+	const [convertBusy, setConvertBusy] = useState<string | null>(null);
+	const [convertError, setConvertError] = useState<string | null>(null);
+	const [convertedFiles, setConvertedFiles] = useState<FileHit[]>([]);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const cardRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
@@ -184,6 +202,29 @@ function LauncherApp() {
 	}, [query]);
 
 	const items = useMemo<Item[]>(() => {
+		if (convertFile) {
+			if (convertedFiles.length > 0)
+				return convertedFiles.map((file): Item => ({
+					kind: "file",
+					key: `file:${file.path}`,
+					title: file.name,
+					file
+				}));
+			if (filee.status && !filee.status.installed)
+				return [
+					{
+						kind: "install",
+						key: "install",
+						title: t("Filee isn't included in this build of Bloom")
+					}
+				];
+			return (convertTargets ?? []).map((format): Item => ({
+				kind: "convert",
+				key: `convert:${format}`,
+				title: formatLabel(format),
+				format
+			}));
+		}
 		const q = query.trim();
 		if (!q) return [];
 		const calc: Item[] = [];
@@ -255,7 +296,30 @@ function LauncherApp() {
 			.slice(0, 8)
 			.map((file): Item => ({ kind: "file", key: `file:${file.path}`, title: file.name, file }));
 		return [...calc, ...sections.flatMap((section) => section.items), ...fileItems];
-	}, [query, apps, files]);
+	}, [query, apps, files, convertFile, convertedFiles, convertTargets, filee]);
+
+	const enterConvert = (file: FileHit) => {
+		setConvertFile(file);
+		setConvertTargets(null);
+		setConvertError(null);
+		setConvertedFiles([]);
+		setSelected(0);
+		filee.refresh();
+		fileeTargets(file.path).then(setConvertTargets);
+	};
+
+	const leaveConvert = () => {
+		setConvertFile(null);
+		setConvertedFiles([]);
+		setConvertError(null);
+		setSelected(0);
+	};
+
+	// Installing Filee from convert mode goes straight on to its formats.
+	useEffect(() => {
+		if (convertFile && filee.status?.installed && convertTargets === null)
+			fileeTargets(convertFile.path).then(setConvertTargets);
+	}, [convertFile, filee.status?.installed, convertTargets]);
 
 	useEffect(() => {
 		setSelected((s) => Math.min(s, Math.max(items.length - 1, 0)));
@@ -297,6 +361,29 @@ function LauncherApp() {
 			case "action":
 				invoke("launcher_run_action", { action: item.action }).catch(() => {});
 				break;
+			case "install":
+				// Only a notice: this build has no Filee to convert with.
+				break;
+			case "convert": {
+				if (!convertFile || convertBusy) return;
+				setConvertBusy(item.format);
+				setConvertError(null);
+				const result = await fileeConvert(convertFile.path, item.format);
+				setConvertBusy(null);
+				if (result.ok && result.outputs.length > 0) {
+					setSelected(0);
+					setConvertedFiles(
+						result.outputs.map((path) => ({
+							name: path.split("\\").pop() || path,
+							path,
+							folder: false
+						}))
+					);
+				} else {
+					setConvertError(t(result.error ?? "Conversion failed"));
+				}
+				break;
+			}
 		}
 	};
 
@@ -313,9 +400,14 @@ function LauncherApp() {
 			e.preventDefault();
 			const item = items[selected];
 			if (item) run(item, e.ctrlKey || e.shiftKey);
+		} else if (e.key === "Tab" && !convertFile && items[selected]?.kind === "file") {
+			e.preventDefault();
+			const item = items[selected];
+			if (item.kind === "file" && !item.file.folder) enterConvert(item.file);
 		} else if (e.key === "Escape") {
 			e.preventDefault();
-			if (query) setQuery("");
+			if (convertFile) leaveConvert();
+			else if (query) setQuery("");
 			else hide();
 		}
 	};
@@ -338,6 +430,7 @@ function LauncherApp() {
 						setQuery(e.target.value);
 						setSelected(0);
 						setConfirming(null);
+						if (convertFile) leaveConvert();
 					}}
 				/>
 			</div>
@@ -362,9 +455,25 @@ function LauncherApp() {
 			)}
 			{query.trim() && (
 				<div className="launcher-results" ref={listRef}>
-					{items.length === 0 && <div className="launcher-empty">{t("No results")}</div>}
+					{items.length === 0 && (
+						<div className="launcher-empty">
+							{!convertFile
+								? t("No results")
+								: convertTargets === null
+									? t("Loading...")
+									: t("Filee can't convert this kind of file")}
+						</div>
+					)}
+					{convertError && <div className="launcher-empty error">{convertError}</div>}
 					{items.map((item, index) => {
-						const header = item.kind !== lastKind ? t(SECTION_TITLES[item.kind]) : null;
+						const header =
+							item.kind === lastKind
+								? null
+								: convertFile && item.kind === "convert"
+									? t("Convert {name} to", { name: convertFile.name })
+									: convertFile && item.kind === "file"
+										? t("Converted")
+										: t(SECTION_TITLES[item.kind]);
 						lastKind = item.kind;
 						const isSelected = index === selected;
 						const subtitle =
@@ -374,7 +483,11 @@ function LauncherApp() {
 									? t("Enter to copy the result")
 									: item.kind === "action" && confirming === item.key
 										? t("Press Enter again to confirm")
-										: null;
+										: item.kind === "convert" && convertBusy === item.format
+											? t("Converting…")
+											: item.kind === "install"
+												? t("Build it with: bun run build:filee")
+												: null;
 						return (
 							<div key={item.key}>
 								{header && <div className="launcher-section">{header}</div>}
@@ -394,7 +507,11 @@ function LauncherApp() {
 										{subtitle && <span className="launcher-item-subtitle">{subtitle}</span>}
 									</div>
 									{isSelected && item.kind === "file" && (
-										<span className="launcher-item-hint">{t("Ctrl+Enter: show in folder")}</span>
+										<span className="launcher-item-hint">
+											{convertFile || item.file.folder
+												? t("Ctrl+Enter: show in folder")
+												: t("Tab: convert · Ctrl+Enter: folder")}
+										</span>
 									)}
 								</div>
 							</div>

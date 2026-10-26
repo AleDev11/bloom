@@ -11,6 +11,7 @@ Run from the repo root unless noted. Bun 1.4.0, Rust stable.
 - `bun run build` — `tsc && vite build`; this is the frontend typecheck. `strict` + `noUnusedLocals`/`noUnusedParameters` fail the build. There is no root lint or frontend test script
 - `cargo check --locked` and `cargo clippy --locked --all-targets` in `src-tauri` — CI's Rust gates
 - `cargo test --locked` in `src-tauri` — pure-function unit tests. Runs fast on Windows but CI does **not** run it, so run it yourself
+- `bun run build:filee` — builds the bundled Filee (needs `git submodule update --init vendor/filee` and the .NET SDK in `vendor/filee/global.json`, currently 10). `tauri build` runs it first; it skips work when the submodule commit hasn't changed. `tauri dev` and `cargo check` work without it (conversion and the radial are then unavailable). To update Filee, check out a newer tag in `vendor/filee` and commit the submodule
 - `bun run bump <x.y.z>` — bumps `package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` together
 - `bun run release <x.y.z>` — bump + commit + tag + push, must be on `main`. The release workflow fails unless all four version files match the tag. Before/after releasing, follow `RELEASE_CHECKLIST.md` (updater manifest verification, N‑1 install smoke test)
 - `website/` is a separate static site: use `npm install` / `npm run dev` there. Root scripts and CI do not build it
@@ -19,6 +20,7 @@ Run from the repo root unless noted. Bun 1.4.0, Rust stable.
 
 - Five webview windows, each a separate Vite/HTML entry: `main` = notch (`index.html` → `src/main.tsx` → `src/App.tsx`), `dock` (`dock.html` → `src/Dock.tsx`), `overlay` (`overlay.html` → `src/Overlay.tsx`), `settings` (`settings.html` → `src/Settings.tsx`), `launcher` = Alt+Space search (`launcher.html` → `src/Launcher.tsx`, backend in `src-tauri/src/launcher.rs`). Adding or renaming a window means editing `src-tauri/tauri.conf.json`, `vite.config.ts` inputs, the HTML file, and `src-tauri/capabilities/default.json`
 - Rust entrypoint is `src-tauri/src/main.rs`; `lib.rs` is an empty stub. Every `#[tauri::command]` must be registered in the `generate_handler!` list in `main.rs`
+- `filee.rs` drives [Filee](https://github.com/KnifeLemon/Filee) (MIT, C#/.NET), which Bloom ships: `vendor/filee` is a git submodule pinned to a release tag, built by `scripts/build-filee.mjs` into `src-tauri/resources/filee` (gitignored except `.placeholder`) and bundled as the `filee` resource. Its CLI converts for the shelf and the launcher; its app runs in the tray for the Ctrl+drag radial menu while `bloom-filee-radial` is on, and Bloom quits it on exit
 - `commands.rs` = IPC surface; `services.rs` = long-lived Win32 hooks/workers (keyboard hook, thumbnail capture, audio visualizer, AppBar registration); `utils.rs` = settings cache and file IO; `state.rs`/`types.rs` = shared statics/types
 - Backend→frontend events use `app.emit`: `settings-changed`, `settings-external-changed`, `media-update`, `volume-change`, `brightness-change`, `dock-overlap`, `notch-overlap`, `windows-changed`, `update-available`, `auto-update-status`. Listen via `@tauri-apps/api/event`
 

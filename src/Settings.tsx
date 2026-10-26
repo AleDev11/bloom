@@ -142,6 +142,8 @@ function SettingsApp() {
 							handleLanguageChange={settings.handleLanguageChange}
 							launcherEnabled={settings.launcherEnabled}
 							toggleLauncher={settings.toggleLauncher}
+							fileeRadial={settings.fileeRadial}
+							toggleFileeRadial={settings.toggleFileeRadial}
 							showUpdateIndicator={settings.showUpdateIndicator}
 							toggleUpdateIndicator={settings.toggleUpdateIndicator}
 							lowBatteryThreshold={settings.lowBatteryThreshold}
